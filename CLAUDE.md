@@ -63,13 +63,19 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 ### Phase 3 — high value ✅
 - [x] autopath hosts rewrite template view transfer acl k8s_external cancel bufsize
 
-### Phase 4 — authoritative
-- [ ] file auto secondary dnssec sign
+### Phase 4 — authoritative ✅
+- [x] file auto secondary dnssec sign (ECDSA/Ed25519 keys; RSA needs OpenSSL)
 
-### Phase 5 — operational / transport / backends
-- [ ] pprof trace nsid chaos header minimal timeouts metadata multisocket
-- [ ] tls (server-side config), grpc (client), dnstap, tsig, dns64, any, local, erratic, geoip, on
-- [ ] etcd route53 azure clouddns kubernetai
+### Phase 5 — operational / transport / backends ✅
+- [x] pprof(partial) trace(partial: no exporter) nsid chaos header minimal timeouts metadata multisocket
+- [x] tls, grpc (client), dnstap, tsig, dns64, any, local, erratic, geoip, on
+- [x] etcd route53 azure clouddns
+- [ ] kubernetai (external plugin, multi-cluster) — not started
 
-### Phase 6
-- [ ] Container image (scratch base, podman), example Corefiles, integration tests, v0.1.0 tag
+### Phase 6 — release
+- [x] Docs (README, architecture, plugin API, plugin status), example Corefiles, Containerfile (scratch)
+- [x] Live smoke test on dev: file zone (wildcards, CNAME, delegation, glue), AXFR over TCP with view, hosts, rewrite→template, health/ready/metrics
+- [ ] v0.1.0 tag after the release build is verified
+- [ ] Container image built with podman and pushed to the mkube registry
+- [ ] Run against a real rustkube/Kubernetes cluster (kubernetes plugin end-to-end)
+- [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`

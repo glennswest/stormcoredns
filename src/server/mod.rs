@@ -120,6 +120,7 @@ impl Server {
         req.server = self.label.clone();
         req.http = http;
         req.tls_server_name = tls_server_name;
+        req.raw = Some(Arc::new(buf.to_vec()));
         let msgs = self.serve_request_all(&mut req).await?;
         let max = req.size();
         let mut out = Vec::with_capacity(msgs.len());

@@ -124,6 +124,8 @@ pub struct Request {
     pub tsig_verified: Option<Name>,
     /// Nesting depth of in-process self lookups (`server::self_lookup`).
     pub lookup_depth: u8,
+    /// The query exactly as received on the wire (needed to verify TSIG).
+    pub raw: Option<Arc<Vec<u8>>>,
     /// Cached lowercase qname.
     name_cache: Option<String>,
 }
@@ -150,6 +152,7 @@ impl Request {
             http: None,
             tsig_verified: None,
             lookup_depth: 0,
+            raw: None,
             name_cache: None,
         }
     }

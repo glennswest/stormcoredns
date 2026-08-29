@@ -47,7 +47,8 @@ where
                     let h = h.clone();
                     async move { Ok::<_, std::convert::Infallible>(h(req).await) }
                 });
-                let conn = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new()).serve_connection(TokioIo::new(stream), svc);
+                let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+                let conn = builder.serve_connection(TokioIo::new(stream), svc);
                 tokio::pin!(conn);
                 tokio::select! {
                     _ = c.cancelled() => { conn.as_mut().graceful_shutdown(); let _ = conn.await; }

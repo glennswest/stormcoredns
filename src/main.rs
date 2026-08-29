@@ -3,6 +3,10 @@
 //! Command line matches `coredns`: `-conf`, `-dns.port`, `-pidfile`,
 //! `-quiet`, `-version`, `-plugins`. Single- and double-dash forms both work.
 
+// hickory-proto 0.24 deprecates `Message::edns()` in favour of
+// `extensions()`; the former is the clearer accessor and is what 0.25 keeps.
+#![allow(deprecated)]
+
 pub mod corefile;
 pub mod dnsutil;
 pub mod metrics;
@@ -55,7 +59,7 @@ fn parse_args() -> Args {
             Some((n, v)) => (n.to_string(), Some(v.to_string())),
             None => (flag.to_string(), None),
         };
-        let mut value = |it: &mut std::iter::Skip<std::env::Args>| -> String {
+        let value = |it: &mut std::iter::Skip<std::env::Args>| -> String {
             inline_val.clone().or_else(|| it.next()).unwrap_or_else(|| usage())
         };
         match name.as_str() {

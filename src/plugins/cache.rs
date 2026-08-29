@@ -16,7 +16,7 @@
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use async_trait::async_trait;
 use hickory_proto::op::{Message, OpCode, ResponseCode};
-use hickory_proto::rr::{RData, RecordType};
+use hickory_proto::rr::RecordType;
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;

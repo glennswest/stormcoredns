@@ -15,6 +15,7 @@ path = "src/main.rs"
 # runtime
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 async-trait = "0.1"
 futures = "0.3"
 anyhow = "1"
@@ -32,7 +33,6 @@ glob = "0.3"
 ipnet = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 humantime = "2"
-clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -60,7 +60,7 @@ hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto", "client", "client-legacy", "http1", "http2"] }
 http = "1"
 http-body-util = "0.1"
-quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls", "ring"] }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 tonic = { version = "0.12", features = ["tls", "tls-roots", "transport"] }
 prost = "0.13"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
@@ -77,6 +77,9 @@ maxminddb = "0.24"
 [features]
 default = ["kubernetes"]
 kubernetes = ["dep:kube", "dep:k8s-openapi"]
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [dev-dependencies]
 tempfile = "3"

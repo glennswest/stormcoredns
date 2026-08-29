@@ -88,7 +88,7 @@ pub fn parse_key(key: &str) -> Result<ParsedKey> {
     Ok(ParsedKey { transport, zone: zones.into_iter().next().unwrap(), port, explicit_port: explicit, ipv4_only: false })
 }
 
-pub type Hook = Box<dyn FnOnce() -> BoxFuture<'static, Result<()>> + Send>;
+pub type Hook = Box<dyn FnOnce() -> BoxFuture<'static, Result<()>> + Send + Sync>;
 pub type FilterFn = Arc<dyn Fn(&Request) -> bool + Send + Sync>;
 
 pub struct ServerConfig {

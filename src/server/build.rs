@@ -62,6 +62,7 @@ pub fn build(blocks: Vec<ServerBlock>, opts: &BuildOptions) -> Result<Built> {
                     c.root = std::env::current_dir().map(|d| d.join(dir)).unwrap_or_else(|_| dir.to_path_buf());
                 }
             }
+            c.values.insert("corefile".into(), opts.corefile.display().to_string());
             idxs.push(configs.len());
             configs.push(c);
         }

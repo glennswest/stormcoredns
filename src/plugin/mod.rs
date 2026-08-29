@@ -22,7 +22,7 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use controller::Controller;
-pub use request::{Extensions, Metadata, Proto, Request};
+pub use request::{Extensions, HttpInfo, Metadata, Proto, Request};
 
 /// The outcome of serving a request.
 #[derive(Debug)]
@@ -133,6 +133,12 @@ impl<'a> Next<'a> {
     /// Name of the next plugin, if any.
     pub fn name(&self) -> Option<&'static str> {
         self.chain.first().map(|h| h.name())
+    }
+
+    /// The remaining handlers (for plugins that re-enter the chain from a
+    /// background task, e.g. cache prefetch).
+    pub fn chain(&self) -> &'a [Arc<dyn Handler>] {
+        self.chain
     }
 
     /// Call the next plugin. If there is none, returns `SERVFAIL` with a

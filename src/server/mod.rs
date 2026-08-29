@@ -4,6 +4,7 @@
 pub mod build;
 pub mod config;
 pub mod grpc;
+pub mod http_util;
 pub mod https;
 pub mod quic;
 pub mod tls;
@@ -406,6 +407,7 @@ impl Instance {
             restart_failed_hooks.append(&mut c.restart_failed);
             configs.push(Arc::new(c));
         }
+        crate::plugins::post_finalize(&configs);
         let servers = build::group_servers(&configs)?;
         let cancel = CancellationToken::new();
         let mut tasks = Vec::new();
@@ -483,14 +485,16 @@ impl Instance {
 
     /// Stop listeners and run shutdown hooks.
     pub async fn stop(mut self) {
-        self.cancel.cancel();
-        for t in self.tasks.drain(..) {
-            let _ = tokio::time::timeout(Duration::from_secs(5), t).await;
-        }
+        // hooks first: `health` lameduck keeps DNS answering while the
+        // endpoint reports 503, then the listeners go away
         for h in self.shutdown_hooks.drain(..) {
             if let Err(e) = h().await {
                 tracing::warn!("shutdown hook: {}", e);
             }
+        }
+        self.cancel.cancel();
+        for t in self.tasks.drain(..) {
+            let _ = tokio::time::timeout(Duration::from_secs(5), t).await;
         }
     }
 

@@ -53,3 +53,12 @@ pub mod k8s_external;
 pub mod clouddns;
 pub mod azure;
 pub mod route53;
+
+/// Called once all configs are finalised (chains sorted) and before
+/// listeners start: lets plugins that need the complete plugin list
+/// (ready, health, prometheus) see it.
+pub fn post_finalize(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
+    ready::post_finalize(configs);
+    health::post_finalize(configs);
+    metrics::post_finalize(configs);
+}

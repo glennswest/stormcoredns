@@ -76,8 +76,8 @@ impl Server {
     }
 
     /// Serve a wire-format query and return the wire-format response (None
-    /// if nothing should be sent, which only happens for unparsable
-    /// queries that have no id).
+    /// if nothing should be sent: dropped, or unparsable without an id).
+    /// Multi-message replies are reduced to their first message.
     pub async fn serve_bytes(
         &self,
         buf: &[u8],
@@ -87,6 +87,19 @@ impl Server {
         http: Option<HttpInfo>,
         tls_server_name: Option<String>,
     ) -> Option<Vec<u8>> {
+        self.serve_bytes_all(buf, remote, local, proto, http, tls_server_name).await.and_then(|mut v| if v.is_empty() { None } else { Some(v.swap_remove(0)) })
+    }
+
+    /// Serve a wire-format query; every message of the reply, encoded.
+    pub async fn serve_bytes_all(
+        &self,
+        buf: &[u8],
+        remote: SocketAddr,
+        local: SocketAddr,
+        proto: Proto,
+        http: Option<HttpInfo>,
+        tls_server_name: Option<String>,
+    ) -> Option<Vec<Vec<u8>>> {
         let msg = match Message::from_bytes(buf) {
             Ok(m) => m,
             Err(e) => {
@@ -98,7 +111,7 @@ impl Server {
                     m.set_id(id);
                     m.set_message_type(hickory_proto::op::MessageType::Response);
                     m.set_response_code(ResponseCode::FormErr);
-                    return m.to_vec().ok();
+                    return m.to_vec().ok().map(|b| vec![b]);
                 }
                 return None;
             }
@@ -107,19 +120,34 @@ impl Server {
         req.server = self.label.clone();
         req.http = http;
         req.tls_server_name = tls_server_name;
-        let resp = self.serve_request(&mut req).await;
+        let msgs = self.serve_request_all(&mut req).await?;
         let max = req.size();
-        match dnsutil::encode_with_limit(&resp, max) {
-            Ok(b) => Some(b),
-            Err(e) => {
-                tracing::warn!("{}: encoding response: {}", self.label, e);
-                dnsutil::error_reply(&req.msg, ResponseCode::ServFail).to_vec().ok()
+        let mut out = Vec::with_capacity(msgs.len());
+        for resp in &msgs {
+            match dnsutil::encode_with_limit(resp, max) {
+                Ok(b) => out.push(b),
+                Err(e) => {
+                    tracing::warn!("{}: encoding response: {}", self.label, e);
+                    out.push(dnsutil::error_reply(&req.msg, ResponseCode::ServFail).to_vec().ok()?);
+                }
             }
         }
+        Some(out)
     }
 
-    /// Run the request through the chain and always produce a response.
-    pub async fn serve_request(&self, req: &mut Request) -> Message {
+    /// Run the request through the chain and produce a response, or `None`
+    /// when a plugin asked for the query to be dropped.
+    pub async fn serve_request(&self, req: &mut Request) -> Option<Message> {
+        self.serve_request_inner(req).await.map(|mut v| v.swap_remove(0))
+    }
+
+    /// Like `serve_request` but keeps every message of a multi-message
+    /// reply (zone transfers).
+    pub async fn serve_request_all(&self, req: &mut Request) -> Option<Vec<Message>> {
+        self.serve_request_inner(req).await
+    }
+
+    async fn serve_request_inner(&self, req: &mut Request) -> Option<Vec<Message>> {
         // RFC 6891: unsupported EDNS version → BADVERS
         if let Some(e) = req.msg.edns() {
             if e.version() != 0 {
@@ -127,17 +155,17 @@ impl Server {
                 if let Some(ne) = m.extensions_mut().as_mut() {
                     ne.set_version(0);
                 }
-                return m;
+                return Some(vec![m]);
             }
         }
         if req.msg.queries().is_empty() {
-            return dnsutil::error_reply(&req.msg, ResponseCode::Refused);
+            return Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::Refused)]);
         }
         let entry = match self.lookup(req) {
             Some(e) => e,
             None => {
                 tracing::debug!("{}: no zone for {} from {}", self.label, req.name_uncached(), req.remote);
-                return dnsutil::error_reply(&req.msg, ResponseCode::Refused);
+                return Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::Refused)]);
             }
         };
         req.zone = entry.config.zone.clone();
@@ -155,17 +183,33 @@ impl Server {
                         m.add_query(q.clone());
                     }
                 }
-                m
+                Some(vec![m])
             }
+            Ok(Ok(Reply::Multi(v))) => {
+                let v: Vec<Message> = v
+                    .into_iter()
+                    .map(|mut m| {
+                        m.set_id(req.msg.id());
+                        m.set_message_type(hickory_proto::op::MessageType::Response);
+                        m
+                    })
+                    .collect();
+                if v.is_empty() {
+                    Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::ServFail)])
+                } else {
+                    Some(v)
+                }
+            }
+            Ok(Ok(Reply::Drop)) => None,
             Ok(Ok(Reply::Rcode(rc))) => {
                 if !client_write(rc) {
                     tracing::debug!("{}: {} {}: {:?} without response", self.label, req.name_uncached(), req.qtype(), rc);
                 }
-                dnsutil::error_reply(&req.msg, rc)
+                Some(vec![dnsutil::error_reply(&req.msg, rc)])
             }
             Ok(Err(e)) => {
                 tracing::debug!("{}: {} {}: {}", self.label, req.name_uncached(), req.qtype(), e);
-                dnsutil::error_reply(&req.msg, e.rcode)
+                Some(vec![dnsutil::error_reply(&req.msg, e.rcode)])
             }
             Err(panic) => {
                 crate::metrics::PANIC_COUNT.inc();
@@ -175,7 +219,7 @@ impl Server {
                     .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_else(|| "unknown".into());
                 tracing::error!("{}: panic serving {}: {}", self.label, req.name_uncached(), what);
-                dnsutil::error_reply(&req.msg, ResponseCode::ServFail)
+                Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::ServFail)])
             }
         }
     }
@@ -296,8 +340,12 @@ impl Server {
             let tx = tx.clone();
             let sni = tls_server_name.clone();
             tokio::spawn(async move {
-                if let Some(resp) = srv.serve_bytes(&pkt, remote, local, proto, None, sni).await {
-                    let _ = tx.send(resp).await;
+                if let Some(msgs) = srv.serve_bytes_all(&pkt, remote, local, proto, None, sni).await {
+                    for resp in msgs {
+                        if tx.send(resp).await.is_err() {
+                            break;
+                        }
+                    }
                 }
             });
         }
@@ -410,7 +458,7 @@ pub async fn self_lookup(req: &Request, name: hickory_proto::rr::Name, qtype: hi
     let mut r = req.new_with_question(name, qtype);
     r.lookup_depth += 1;
     r.server = srv.label.clone();
-    Ok(srv.serve_request(&mut r).await)
+    srv.serve_request(&mut r).await.ok_or_else(|| anyhow!("query for {} was dropped", r.name_uncached()))
 }
 
 impl Instance {

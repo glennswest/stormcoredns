@@ -30,9 +30,11 @@ pub enum Reply {
     /// A response message was produced and will be written to the client.
     Msg(Message),
     /// No plugin produced a response; the server answers with this rcode.
-    /// (`Rcode(NoError)` means "handled, nothing to send" — only a plugin
-    /// that has genuinely already written, e.g. dnstap tap-only, uses it.)
     Rcode(ResponseCode),
+    /// Send nothing at all (`acl drop`).
+    Drop,
+    /// Several messages in sequence (zone transfers over stream transports).
+    Multi(Vec<Message>),
 }
 
 impl Reply {
@@ -40,24 +42,29 @@ impl Reply {
         match self {
             Reply::Msg(m) => m.response_code(),
             Reply::Rcode(r) => *r,
+            Reply::Drop => ResponseCode::NoError,
+            Reply::Multi(v) => v.first().map(|m| m.response_code()).unwrap_or(ResponseCode::NoError),
         }
     }
     pub fn msg(&self) -> Option<&Message> {
         match self {
             Reply::Msg(m) => Some(m),
-            Reply::Rcode(_) => None,
+            Reply::Multi(v) => v.first(),
+            _ => None,
         }
     }
     pub fn msg_mut(&mut self) -> Option<&mut Message> {
         match self {
             Reply::Msg(m) => Some(m),
-            Reply::Rcode(_) => None,
+            Reply::Multi(v) => v.first_mut(),
+            _ => None,
         }
     }
     pub fn into_msg(self) -> Option<Message> {
         match self {
             Reply::Msg(m) => Some(m),
-            Reply::Rcode(_) => None,
+            Reply::Multi(v) => v.into_iter().next(),
+            _ => None,
         }
     }
 }
@@ -94,6 +101,19 @@ pub fn error(plugin: &'static str, err: impl Into<anyhow::Error>) -> PluginError
 
 pub type DnsResult = Result<Reply, PluginError>;
 
+/// What `k8s_external` needs to know about a service.
+#[derive(Debug, Clone, Default)]
+pub struct ExternalService {
+    /// LoadBalancer ingress IPs and `spec.externalIPs`.
+    pub ips: Vec<std::net::IpAddr>,
+    /// LoadBalancer ingress hostnames.
+    pub hostnames: Vec<String>,
+    /// Ready endpoint IPs of a headless service (for `k8s_external headless`).
+    pub headless_ips: Vec<std::net::IpAddr>,
+    /// (name, protocol, port)
+    pub ports: Vec<(String, String, u16)>,
+}
+
 /// A plugin in the chain.
 #[async_trait]
 pub trait Handler: Send + Sync + 'static {
@@ -113,6 +133,32 @@ pub trait Handler: Send + Sync + 'static {
     fn health(&self) -> Option<bool> {
         None
     }
+
+    /// `autopath.AutoPather`: the search path to try for this client
+    /// (e.g. `["ns.svc.cluster.local.", "svc.cluster.local.", "cluster.local.", ""]`).
+    fn autopath(&self, _req: &Request) -> Option<Vec<String>> {
+        None
+    }
+
+    /// `transfer.Transferer`: all records of `zone` for an outbound AXFR
+    /// (SOA first), or `None` if this plugin does not serve it.
+    fn transfer(&self, _zone: &str) -> Option<Vec<hickory_proto::rr::Record>> {
+        None
+    }
+
+    /// `k8s_external` support: the externally reachable addresses of a
+    /// service, or `None` if the service is unknown.
+    fn external_addrs(&self, _namespace: &str, _service: &str) -> Option<ExternalService> {
+        None
+    }
+
+    /// `k8s_external` reverse: service name for an external IP.
+    fn external_reverse(&self, _ip: std::net::IpAddr) -> Option<(String, String)> {
+        None
+    }
+
+    /// `metadata.Provider`: attach metadata for this request.
+    fn metadata(&self, _req: &mut Request) {}
 }
 
 /// Cursor over the remainder of the plugin chain.

@@ -51,6 +51,9 @@ pub struct Kubernetes {
     pub fallthrough: Option<Vec<String>>,
     pub ignore_empty_service: bool,
     pub local_ips: Vec<IpAddr>,
+    /// Host search domains (from /etc/resolv.conf) appended to the
+    /// per-pod search path handed to `autopath`.
+    pub autopath_search: Vec<String>,
 }
 
 /// What a query name means inside the cluster zone.
@@ -489,6 +492,40 @@ impl Handler for KubernetesHandler {
         Some(self.0.store.synced(self.0.pod_mode == PodMode::Verified, self.0.watch_endpoints))
     }
 
+    /// Per-pod search path for `autopath @kubernetes` (needs `pods verified`).
+    fn autopath(&self, req: &Request) -> Option<Vec<String>> {
+        let k = &self.0;
+        if k.pod_mode != PodMode::Verified {
+            return None;
+        }
+        let pod = k.store.pod_by_ip(req.ip())?;
+        let z = &k.primary_zone;
+        let mut sp = vec![dnsutil::join(&[&pod.namespace, "svc"], z), dnsutil::join(&["svc"], z), z.clone()];
+        sp.extend(k.autopath_search.iter().cloned());
+        sp.push(String::new());
+        Some(sp)
+    }
+
+    fn external_addrs(&self, namespace: &str, service: &str) -> Option<crate::plugin::ExternalService> {
+        let k = &self.0;
+        if !k.namespace_exposed(namespace) {
+            return None;
+        }
+        let svc = k.store.service(namespace, service)?;
+        let headless_ips = if svc.headless { k.ready_endpoints(&svc).into_iter().flat_map(|e| e.ips).collect() } else { Vec::new() };
+        Some(crate::plugin::ExternalService {
+            ips: svc.external_ips.clone(),
+            hostnames: svc.external_hosts.clone(),
+            headless_ips,
+            ports: svc.ports.iter().map(|p| (p.name.clone(), p.protocol.clone(), p.port)).collect(),
+        })
+    }
+
+    fn external_reverse(&self, ip: IpAddr) -> Option<(String, String)> {
+        let svc = self.0.store.service_by_external_ip(ip)?;
+        Some((svc.namespace.clone(), svc.name.clone()))
+    }
+
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
         let k = &self.0;
         let name = req.name();
@@ -545,6 +582,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             fallthrough: None,
             ignore_empty_service: false,
             local_ips: crate::plugins::bind::interfaces().into_iter().map(|(_, ip)| ip).filter(|ip| !ip.is_loopback()).collect(),
+            autopath_search: std::fs::read_to_string("/etc/resolv.conf").map(|t| crate::plugins::autopath::search_from_resolv(&t)).unwrap_or_default(),
         };
         let mut labels: Option<String> = None;
         let mut namespace_labels: Option<String> = None;
@@ -718,6 +756,7 @@ mod tests {
             fallthrough: None,
             ignore_empty_service: false,
             local_ips: vec![],
+            autopath_search: vec![],
         })
     }
 

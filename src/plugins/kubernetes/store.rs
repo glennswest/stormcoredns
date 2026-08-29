@@ -41,6 +41,10 @@ pub struct Svc {
     pub external_name: Option<String>,
     pub ports: Vec<Port>,
     pub publish_not_ready: bool,
+    /// LoadBalancer ingress IPs + `spec.externalIPs` (for `k8s_external`).
+    pub external_ips: Vec<IpAddr>,
+    /// LoadBalancer ingress hostnames.
+    pub external_hosts: Vec<String>,
 }
 
 impl Svc {
@@ -62,6 +66,7 @@ type Key = (String, String); // (namespace, name)
 pub struct Store {
     services: RwLock<HashMap<Key, Arc<Svc>>>,
     svc_by_ip: RwLock<HashMap<IpAddr, Key>>,
+    ext_by_ip: RwLock<HashMap<IpAddr, Key>>,
     /// (ns, service) → slice name → endpoints
     endpoints: RwLock<HashMap<Key, HashMap<String, Vec<Endpoint>>>>,
     ep_by_ip: RwLock<HashMap<IpAddr, HashSet<Key>>>,
@@ -111,6 +116,11 @@ impl Store {
         self.services.read().get(&k).cloned()
     }
 
+    pub fn service_by_external_ip(&self, ip: IpAddr) -> Option<Arc<Svc>> {
+        let k = self.ext_by_ip.read().get(&ip).cloned()?;
+        self.services.read().get(&k).cloned()
+    }
+
     /// All endpoints of a service, slices merged.
     pub fn endpoints(&self, ns: &str, name: &str) -> Vec<Endpoint> {
         self.endpoints
@@ -151,14 +161,21 @@ impl Store {
         let Some(svc) = convert_service(s) else { return };
         let key = svc.key();
         let mut by_ip = self.svc_by_ip.write();
+        let mut ext = self.ext_by_ip.write();
         let mut services = self.services.write();
         if let Some(old) = services.get(&key) {
             for ip in &old.cluster_ips {
                 by_ip.remove(ip);
             }
+            for ip in &old.external_ips {
+                ext.remove(ip);
+            }
         }
         for ip in &svc.cluster_ips {
             by_ip.insert(*ip, key.clone());
+        }
+        for ip in &svc.external_ips {
+            ext.insert(*ip, key.clone());
         }
         services.insert(key, Arc::new(svc));
     }
@@ -166,9 +183,13 @@ impl Store {
     fn delete_service(&self, s: &Service) {
         let key = (s.namespace().unwrap_or_default(), s.name_any());
         let mut by_ip = self.svc_by_ip.write();
+        let mut ext = self.ext_by_ip.write();
         if let Some(old) = self.services.write().remove(&key) {
             for ip in &old.cluster_ips {
                 by_ip.remove(ip);
+            }
+            for ip in &old.external_ips {
+                ext.remove(ip);
             }
         }
     }
@@ -355,6 +376,18 @@ fn convert_service(s: &Service) -> Option<Svc> {
         .iter()
         .filter_map(|p| Some(Port { name: p.name.clone().unwrap_or_default(), protocol: p.protocol.clone().unwrap_or_else(|| "TCP".into()), port: u16::try_from(p.port).ok()? }))
         .collect();
+    let mut external_ips: Vec<IpAddr> = spec.external_ips.as_deref().unwrap_or(&[]).iter().filter_map(|s| s.parse().ok()).collect();
+    let mut external_hosts = Vec::new();
+    if let Some(ingress) = s.status.as_ref().and_then(|st| st.load_balancer.as_ref()).and_then(|lb| lb.ingress.as_ref()) {
+        for i in ingress {
+            if let Some(ip) = i.ip.as_ref().and_then(|s| s.parse().ok()) {
+                external_ips.push(ip);
+            }
+            if let Some(h) = &i.hostname {
+                external_hosts.push(h.clone());
+            }
+        }
+    }
     Some(Svc {
         name,
         namespace,
@@ -363,6 +396,8 @@ fn convert_service(s: &Service) -> Option<Svc> {
         external_name: if ty == "ExternalName" { spec.external_name.clone() } else { None },
         ports,
         publish_not_ready: spec.publish_not_ready_addresses.unwrap_or(false),
+        external_ips,
+        external_hosts,
     })
 }
 
@@ -419,11 +454,15 @@ impl Store {
     fn retain_services(&self, seen: &HashSet<Key>) {
         let gone: Vec<Key> = self.services.read().keys().filter(|k| !seen.contains(*k)).cloned().collect();
         let mut by_ip = self.svc_by_ip.write();
+        let mut ext = self.ext_by_ip.write();
         let mut services = self.services.write();
         for k in gone {
             if let Some(old) = services.remove(&k) {
                 for ip in &old.cluster_ips {
                     by_ip.remove(ip);
+                }
+                for ip in &old.external_ips {
+                    ext.remove(ip);
                 }
             }
         }
@@ -585,6 +624,8 @@ pub mod testing {
             external_name: external.map(|s| s.into()),
             ports: ports.iter().map(|(n, p, port)| Port { name: n.to_string(), protocol: p.to_string(), port: *port }).collect(),
             publish_not_ready: false,
+            external_ips: Vec::new(),
+            external_hosts: Vec::new(),
         };
         let key = svc.key();
         for ip in &svc.cluster_ips {

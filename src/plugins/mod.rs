@@ -58,7 +58,37 @@ pub mod route53;
 /// listeners start: lets plugins that need the complete plugin list
 /// (ready, health, prometheus) see it.
 pub fn post_finalize(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
+    wire::run(configs);
     ready::post_finalize(configs);
     health::post_finalize(configs);
     metrics::post_finalize(configs);
+}
+
+/// Deferred cross-plugin wiring: a plugin's `setup` runs before the
+/// plugins after it in `plugin.cfg` exist, so anything that needs a sibling
+/// handler (autopath → kubernetes, k8s_external → kubernetes, transfer →
+/// file/secondary) registers a closure here that runs once the server
+/// block's chain is complete (`c.OnStartup` + `config.Handler()` in CoreDNS).
+pub mod wire {
+    use crate::server::config::ServerConfig;
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    type WireFn = Box<dyn FnOnce(&ServerConfig) + Send>;
+    static PENDING: Lazy<Mutex<Vec<(usize, usize, WireFn)>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+    /// Register `f` to run against the finished config of (block, key).
+    pub fn register(c: &crate::plugin::Controller<'_>, f: impl FnOnce(&ServerConfig) + Send + 'static) {
+        PENDING.lock().push((c.server_block_index, c.server_block_key_index, Box::new(f)));
+    }
+
+    pub fn run(configs: &[Arc<ServerConfig>]) {
+        let pending = std::mem::take(&mut *PENDING.lock());
+        for (bi, ki, f) in pending {
+            if let Some(cfg) = configs.iter().find(|c| c.block_index == bi && c.key_index == ki) {
+                f(cfg);
+            }
+        }
+    }
 }

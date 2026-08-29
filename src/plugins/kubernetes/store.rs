@@ -72,23 +72,27 @@ pub struct Store {
     pub endpoints_synced: AtomicBool,
     pub pods_synced: AtomicBool,
     pub namespaces_synced: AtomicBool,
-    /// Programming-latency histogram support: last-change trigger times.
-    pub programming_latency: prometheus::HistogramVec,
 }
+
+/// `coredns_kubernetes_dns_programming_duration_seconds`.
+static PROGRAMMING_LATENCY: once_cell::sync::Lazy<prometheus::HistogramVec> = once_cell::sync::Lazy::new(|| {
+    let h = prometheus::HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "coredns_kubernetes_dns_programming_duration_seconds",
+            "Histogram of the time (in seconds) it took to program a dns instance.",
+        )
+        .buckets(vec![0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192, 16.384, 32.768, 65.536, 131.072, 262.144, 524.288]),
+        &["service_kind"],
+    )
+    .unwrap();
+    crate::metrics::register(Box::new(h.clone()));
+    h
+});
 
 impl Store {
     pub fn new() -> Arc<Store> {
-        let h = prometheus::HistogramVec::new(
-            prometheus::HistogramOpts::new(
-                "coredns_kubernetes_dns_programming_duration_seconds",
-                "Histogram of the time (in seconds) it took to program a dns instance.",
-            )
-            .buckets(vec![0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192, 16.384, 32.768, 65.536, 131.072, 262.144, 524.288]),
-            &["service_kind"],
-        )
-        .unwrap();
-        crate::metrics::register(Box::new(h.clone()));
-        Arc::new(Store { programming_latency: h, ..Default::default() })
+        once_cell::sync::Lazy::force(&PROGRAMMING_LATENCY);
+        Arc::new(Store::default())
     }
 
     // ------------------------------------------------------------ queries
@@ -278,7 +282,7 @@ impl Store {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(t) {
                 let lag = chrono::Utc::now().signed_duration_since(ts.with_timezone(&chrono::Utc));
                 if let Ok(d) = lag.to_std() {
-                    self.programming_latency.with_label_values(&[kind]).observe(d.as_secs_f64());
+                    PROGRAMMING_LATENCY.with_label_values(&[kind]).observe(d.as_secs_f64());
                 }
             }
         }

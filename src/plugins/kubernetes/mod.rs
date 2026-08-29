@@ -29,7 +29,6 @@ use hickory_proto::rr::rdata::{A, AAAA, CNAME, NS, PTR, SOA, SRV, TXT};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use store::{Endpoint, Store, Svc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,8 +672,8 @@ async fn make_client(endpoint: Option<String>, tls: Option<(String, String, Stri
         let mut cfg = kube::Config::new(uri);
         if let Some((cert, key, ca)) = tls {
             cfg.root_cert = Some(vec![std::fs::read(resolve(&ca)).map_err(|e| anyhow!("reading {}: {}", ca, e))?]);
-            cfg.auth_info.client_certificate = Some(resolve(&cert));
-            cfg.auth_info.client_key = Some(resolve(&key));
+            cfg.auth_info.client_certificate = Some(resolve(&cert).display().to_string());
+            cfg.auth_info.client_key = Some(resolve(&key).display().to_string());
         } else if url.starts_with("https://") {
             tracing::warn!("plugin/kubernetes: endpoint {} without tls: accepting any server certificate", url);
             cfg.accept_invalid_certs = true;

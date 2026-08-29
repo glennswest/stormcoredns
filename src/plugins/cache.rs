@@ -557,7 +557,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use hickory_proto::rr::rdata::A;
-    use hickory_proto::rr::{Name, Record};
+    use hickory_proto::rr::{Name, RData, Record};
 
     struct Static(u32);
     #[async_trait]

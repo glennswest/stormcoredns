@@ -656,7 +656,7 @@ pub async fn lookup(f: &Forward, name: Name, qtype: RecordType) -> Result<Messag
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::corefile::lex;
+    use crate::corefile::lexer::lex;
 
     fn ctl_parse(s: &str) -> Result<Forward> {
         let toks = lex(s, "t");

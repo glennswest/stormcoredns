@@ -1,5 +1,6 @@
 //! One module per CoreDNS plugin, named after the directive.
 
+pub mod cloud;
 pub mod root;
 pub mod metadata;
 pub mod geoip;

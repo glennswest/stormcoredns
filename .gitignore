@@ -1,0 +1,32 @@
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+target/
+dist/
+build/
+*.o
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# GeoIP databases, zone signing keys (never commit)
+*.mmdb
+K*.private

@@ -58,10 +58,10 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 ### Phase 2 — essential for a cluster
 - [x] errors health ready prometheus forward cache loop reload loadbalance
 - [x] log bind debug root whoami
-- [ ] kubernetes (Services, headless, SRV, PTR, pods, ExternalName, fallthrough)
+- [x] kubernetes (Services, headless, SRV, PTR, pods, ExternalName, fallthrough; EndpointSlices with core Endpoints fallback)
 
-### Phase 3 — high value
-- [ ] autopath hosts rewrite template view transfer acl k8s_external cancel bufsize
+### Phase 3 — high value ✅
+- [x] autopath hosts rewrite template view transfer acl k8s_external cancel bufsize
 
 ### Phase 4 — authoritative
 - [ ] file auto secondary dnssec sign

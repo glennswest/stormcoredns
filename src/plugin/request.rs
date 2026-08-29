@@ -122,6 +122,8 @@ pub struct Request {
     pub http: Option<HttpInfo>,
     /// Client-provided TSIG name that verified OK (set by `tsig`).
     pub tsig_verified: Option<Name>,
+    /// Nesting depth of in-process self lookups (`server::self_lookup`).
+    pub lookup_depth: u8,
     /// Cached lowercase qname.
     name_cache: Option<String>,
 }
@@ -147,6 +149,7 @@ impl Request {
             tls_server_name: None,
             http: None,
             tsig_verified: None,
+            lookup_depth: 0,
             name_cache: None,
         }
     }
@@ -353,6 +356,7 @@ impl Request {
         r.tls_server_name = self.tls_server_name.clone();
         r.http = self.http.clone();
         r.tsig_verified = self.tsig_verified.clone();
+        r.lookup_depth = self.lookup_depth;
         r
     }
 
@@ -375,6 +379,7 @@ impl Request {
         r.zone = self.zone.clone();
         r.view = self.view.clone();
         r.deadline = self.deadline;
+        r.lookup_depth = self.lookup_depth;
         r
     }
 }

@@ -390,6 +390,29 @@ pub fn request_reload() {
     RELOAD.send_modify(|v| *v += 1);
 }
 
+/// The servers of the running instance, for in-process self lookups.
+pub static CURRENT: Lazy<arc_swap::ArcSwap<Vec<Arc<Server>>>> = Lazy::new(|| arc_swap::ArcSwap::from_pointee(Vec::new()));
+
+/// `upstream.Lookup`: resolve `name`/`qtype` through this server's own
+/// plugin chain (what CoreDNS does by querying itself over loopback).
+/// Prefers the server the request arrived on.
+pub async fn self_lookup(req: &Request, name: hickory_proto::rr::Name, qtype: hickory_proto::rr::RecordType) -> Result<Message> {
+    if req.lookup_depth >= 8 {
+        return Err(anyhow!("self lookup nesting too deep for {}", name));
+    }
+    let servers = CURRENT.load();
+    let srv = servers
+        .iter()
+        .find(|s| s.label == req.server)
+        .or_else(|| servers.first())
+        .cloned()
+        .ok_or_else(|| anyhow!("no running server for self lookup"))?;
+    let mut r = req.new_with_question(name, qtype);
+    r.lookup_depth += 1;
+    r.server = srv.label.clone();
+    Ok(srv.serve_request(&mut r).await)
+}
+
 impl Instance {
     /// Build configs from parsed server blocks, run startup hooks, bind
     /// listeners, and start serving.
@@ -474,6 +497,7 @@ impl Instance {
                 tasks.push(task);
             }
         }
+        CURRENT.store(Arc::new(servers.clone()));
         for srv in &servers {
             for a in &srv.addrs {
                 let shown = if a.starts_with(':') { format!("[::]{}", a) } else { a.clone() };

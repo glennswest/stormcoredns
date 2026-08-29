@@ -109,6 +109,39 @@ impl Hosts {
         RELOAD_TIMESTAMP.with_label_values(&[]).set(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0));
         *self.map.write() = m;
     }
+
+    fn lookup(&self, qname: &str, name: &Name, qtype: RecordType) -> (Vec<Record>, bool) {
+        let map = self.map.read();
+        let mut answers: Vec<Record> = Vec::new();
+        let mut name_exists = false;
+        match qtype {
+            RecordType::A => {
+                if let Some(v) = map.v4.get(qname) {
+                    answers.extend(v.iter().map(|ip| Record::from_rdata(name.clone(), self.ttl, RData::A(A(*ip)))));
+                }
+                name_exists = map.v6.contains_key(qname);
+            }
+            RecordType::AAAA => {
+                if let Some(v) = map.v6.get(qname) {
+                    answers.extend(v.iter().map(|ip| Record::from_rdata(name.clone(), self.ttl, RData::AAAA(AAAA(*ip)))));
+                }
+                name_exists = map.v4.contains_key(qname);
+            }
+            RecordType::PTR if !self.no_reverse => {
+                if let Some(v) = map.reverse.get(qname) {
+                    for h in v {
+                        if let Ok(n) = Name::from_ascii(h) {
+                            answers.push(Record::from_rdata(name.clone(), self.ttl, RData::PTR(PTR(n))));
+                        }
+                    }
+                }
+            }
+            _ => {
+                name_exists = map.v4.contains_key(qname) || map.v6.contains_key(qname) || (!self.no_reverse && map.reverse.contains_key(qname));
+            }
+        }
+        (answers, name_exists)
+    }
 }
 
 #[async_trait]
@@ -123,36 +156,7 @@ impl Handler for Hosts {
             return next.serve(req).await;
         }
         let name = req.qname();
-        let map = self.map.read();
-        let mut answers: Vec<Record> = Vec::new();
-        let mut name_exists = false;
-        match req.qtype() {
-            RecordType::A => {
-                if let Some(v) = map.v4.get(&qname) {
-                    answers.extend(v.iter().map(|ip| Record::from_rdata(name.clone(), self.ttl, RData::A(A(*ip)))));
-                }
-                name_exists = map.v6.contains_key(&qname);
-            }
-            RecordType::AAAA => {
-                if let Some(v) = map.v6.get(&qname) {
-                    answers.extend(v.iter().map(|ip| Record::from_rdata(name.clone(), self.ttl, RData::AAAA(AAAA(*ip)))));
-                }
-                name_exists = map.v4.contains_key(&qname);
-            }
-            RecordType::PTR if !self.no_reverse => {
-                if let Some(v) = map.reverse.get(&qname) {
-                    for h in v {
-                        if let Ok(n) = Name::from_ascii(h) {
-                            answers.push(Record::from_rdata(name.clone(), self.ttl, RData::PTR(PTR(n))));
-                        }
-                    }
-                }
-            }
-            _ => {
-                name_exists = map.v4.contains_key(&qname) || map.v6.contains_key(&qname) || (!self.no_reverse && map.reverse.contains_key(&qname));
-            }
-        }
-        drop(map);
+        let (answers, name_exists) = self.lookup(&qname, &name, req.qtype());
         if answers.is_empty() {
             if let Some(ft) = &self.fallthrough {
                 if crate::plugin::zones_match(ft, &qname).is_some() {

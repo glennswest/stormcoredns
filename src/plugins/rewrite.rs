@@ -15,7 +15,7 @@
 
 use crate::dnsutil;
 use crate::plugin::replacer::rcode_from_str;
-use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
+use crate::plugin::{Controller, DnsResult, Handler, Next, Request};
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use hickory_proto::op::{Edns, Message, ResponseCode};
@@ -291,7 +291,7 @@ impl Rewrite {
                     true
                 }
                 Rule::Edns0Nsid { action } => {
-                    apply_edns0(req, *action, u16::from(EdnsCode::Nsid), Vec::new());
+                    apply_edns0(req, *action, u16::from(EdnsCode::NSID), Vec::new());
                     true
                 }
                 Rule::Edns0Subnet { action, v4, v6 } => {

@@ -69,7 +69,7 @@ fn build_messages(req: &Request, mut records: Vec<Record>) -> Vec<Message> {
     cur.set_authoritative(true);
     *cur.extensions_mut() = None;
     let mut size = 12 + 64;
-    let mut push = |cur: &mut Message, size: &mut usize, r: Record, out: &mut Vec<Message>, req: &Request| {
+    let push = |cur: &mut Message, size: &mut usize, r: Record, out: &mut Vec<Message>, req: &Request| {
         let rlen = r.to_bytes().map(|b| b.len()).unwrap_or(64);
         if *size + rlen > MSG_LIMIT && !cur.answers().is_empty() {
             let mut next = req.new_reply();

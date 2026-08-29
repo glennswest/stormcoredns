@@ -10,7 +10,7 @@ is [docs/plugin-api.md](docs/plugin-api.md); per-plugin status is in
 
 ## Version
 
-`0.1.0` — defined in `Cargo.toml` only (`src/main.rs` reads
+`0.1.0` (tag v0.1.0) — defined in `Cargo.toml` only (`src/main.rs` reads
 `env!("CARGO_PKG_VERSION")`).
 
 ## Build on dev, never on this Mac
@@ -75,7 +75,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 ### Phase 6 — release
 - [x] Docs (README, architecture, plugin API, plugin status), example Corefiles, Containerfile (scratch)
 - [x] Live smoke test on dev: file zone (wildcards, CNAME, delegation, glue), AXFR over TCP with view, hosts, rewrite→template, health/ready/metrics
-- [ ] v0.1.0 tag after the release build is verified
+- [x] v0.1.0 tagged 2026-08-29 (release binary 14.8 MB, 53 directives)
 - [ ] Container image built with podman and pushed to the mkube registry
 - [ ] Run against a real rustkube/Kubernetes cluster (kubernetes plugin end-to-end)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`

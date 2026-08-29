@@ -27,7 +27,7 @@ authoritative `file`/`transfer` setup runs unchanged.
 ```bash
 stormcoredns -conf Corefile          # same flags as coredns
 stormcoredns -dns.port 1053 -quiet
-stormcoredns -plugins                # list the 55 directives
+stormcoredns -plugins                # list the 53 directives
 ```
 
 ## What is implemented

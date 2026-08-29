@@ -128,6 +128,10 @@ pub struct Request {
 
 impl Request {
     pub fn new(msg: Message, remote: SocketAddr, local: SocketAddr, proto: Proto) -> Self {
+        // dual-stack sockets report IPv4 peers as ::ffff:a.b.c.d; CoreDNS
+        // (Go) reports them as IPv4, so unmap for family/ACL/logging parity
+        let remote = SocketAddr::new(remote.ip().to_canonical(), remote.port());
+        let local = SocketAddr::new(local.ip().to_canonical(), local.port());
         Request {
             msg,
             remote,

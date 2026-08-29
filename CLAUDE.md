@@ -44,23 +44,32 @@ examples/              Corefiles
 
 ## Work plan
 
-### Phase 1 — core (in progress)
-- [x] Cargo manifest, gitignore, changelog
-- [ ] Corefile lexer/parser/Dispenser (import, snippets, env vars, blocks)
-- [ ] Plugin trait, chain, request/reply, registry, plugin.cfg order
-- [ ] Server: config from server blocks, zone dispatch, UDP+TCP listeners
-- [ ] TLS, DoH, DoQ, gRPC transports
-- [ ] main.rs CLI matching `coredns` flags
-- [ ] Core plugins: whoami, log, errors, hosts, file, forward, cache, rewrite,
-      template, health, ready, prometheus, bind, root, reload, debug
-- [ ] Build + test on dev, tag v0.1.0
+Priority order came from the owner (2026-08-29): Kubernetes cluster DNS
+first, then the plugins that let one server also serve site zones (the
+MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 
-### Phase 2 — remaining plugins
-- [ ] acl any autopath bufsize cancel chaos dns64 dnssec dnstap erratic geoip
-      grpc header k8s_external kubernetes loadbalance local loop metadata
-      minimal multisocket nsid on pprof secondary sign timeouts tls trace
-      transfer tsig view auto etcd
-- [ ] Cloud: route53 azure clouddns
+### Phase 1 — core ✅
+- [x] Corefile lexer/parser/Dispenser (import, snippets, env vars, blocks)
+- [x] Plugin trait, chain, request/reply, registry in plugin.cfg order
+- [x] Server: zone dispatch, UDP+TCP, TLS, DoH, DoQ, gRPC listeners, reload/SIGHUP/SIGUSR1
+- [x] main.rs CLI matching `coredns` flags
+- [x] Smoke-tested on dev: UDP/TCP answers, cache hit, forward, health/ready/metrics
 
-### Phase 3
-- [ ] Container image (scratch base, podman), example Corefiles, integration tests
+### Phase 2 — essential for a cluster
+- [x] errors health ready prometheus forward cache loop reload loadbalance
+- [x] log bind debug root whoami
+- [ ] kubernetes (Services, headless, SRV, PTR, pods, ExternalName, fallthrough)
+
+### Phase 3 — high value
+- [ ] autopath hosts rewrite template view transfer acl k8s_external cancel bufsize
+
+### Phase 4 — authoritative
+- [ ] file auto secondary dnssec sign
+
+### Phase 5 — operational / transport / backends
+- [ ] pprof trace nsid chaos header minimal timeouts metadata multisocket
+- [ ] tls (server-side config), grpc (client), dnstap, tsig, dns64, any, local, erratic, geoip, on
+- [ ] etcd route53 azure clouddns kubernetai
+
+### Phase 6
+- [ ] Container image (scratch base, podman), example Corefiles, integration tests, v0.1.0 tag

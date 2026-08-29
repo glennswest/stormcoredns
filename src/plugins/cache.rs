@@ -98,7 +98,6 @@ struct Item {
     /// Prefetch bookkeeping: request count in the current window.
     fetches: u32,
     window_start: Instant,
-    rtype: RespType,
 }
 
 impl Item {
@@ -147,7 +146,6 @@ struct Shard {
 
 pub struct Store {
     shards: Vec<Shard>,
-    cap: usize,
 }
 
 const SHARDS: usize = 256;
@@ -156,7 +154,7 @@ impl Store {
     fn new(cap: usize) -> Store {
         let per = (cap / SHARDS).max(1);
         let shards = (0..SHARDS).map(|_| Shard { map: Mutex::new(LruCache::new(NonZeroUsize::new(per).unwrap())) }).collect();
-        Store { shards, cap }
+        Store { shards }
     }
     fn shard(&self, key: u64) -> &Shard {
         &self.shards[(key % SHARDS as u64) as usize]
@@ -258,7 +256,8 @@ impl Cache {
         let mut stored = m.clone();
         // normalise: strip OPT, we add our own on the way out
         *stored.extensions_mut() = None;
-        let item = Item { msg: stored, stored: Instant::now(), ttl: ttl.as_secs() as u32, fetches: 0, window_start: Instant::now(), rtype };
+        let _ = rtype;
+        let item = Item { msg: stored, stored: Instant::now(), ttl: ttl.as_secs() as u32, fetches: 0, window_start: Instant::now() };
         let shard = store.shard(k);
         let mut map = shard.map.lock();
         if map.len() >= map.cap().get() && !map.contains(&k) {

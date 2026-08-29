@@ -42,7 +42,8 @@ impl Matcher {
             "prefix" => Matcher::Prefix(pat.to_ascii_lowercase()),
             "suffix" => Matcher::Suffix(dnsutil::fqdn(pat).trim_start_matches('.').to_string().to_ascii_lowercase()),
             "substring" => Matcher::Substring(pat.to_ascii_lowercase()),
-            "regex" => Matcher::Regex(Regex::new(&format!("(?i)^{}$", pat.trim_start_matches('^').trim_end_matches('$'))).map_err(|e| anyhow!("bad regex {}: {}", pat, e))?),
+            // unanchored submatch on the lowercased FQDN, as CoreDNS does
+            "regex" => Matcher::Regex(Regex::new(&format!("(?i){}", pat)).map_err(|e| anyhow!("bad regex {}: {}", pat, e))?),
             o => bail!("unknown name match type {}", o),
         })
     }

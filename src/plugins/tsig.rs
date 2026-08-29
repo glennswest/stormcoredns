@@ -111,10 +111,10 @@ impl Tsig {
 
     /// Sign `m` as the response to a request whose MAC was `req_mac`.
     fn sign_response(&self, req: &Request, secret: &Secret, req_mac: &[u8], m: &mut Message) -> Result<()> {
-        let signer = TSigner::new(secret.key.clone(), secret.algorithm, secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
+        let signer = TSigner::new(secret.key.clone(), secret.algorithm.clone(), secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let pre = TSIG::new(secret.algorithm, now, FUDGE, Vec::new(), req.msg.id(), 0, Vec::new());
-        let tbs = hickory_proto::rr::dnssec::tsig::message_tbs(Some(req_mac), m, &pre, &secret.name).map_err(|e| anyhow!("{}", e))?;
+        let pre = TSIG::new(secret.algorithm.clone(), now, FUDGE, Vec::new(), req.msg.id(), 0, Vec::new());
+        let tbs = hickory_proto::rr::dnssec::rdata::tsig::message_tbs(Some(req_mac), m, &pre, &secret.name).map_err(|e| anyhow!("{}", e))?;
         let mac = signer.sign(&tbs).map_err(|e| anyhow!("{}", e))?;
         let t = pre.set_mac(mac);
         let mut r = Record::from_rdata(secret.name.clone(), 0, RData::DNSSEC(DNSSECRData::TSIG(t)));
@@ -150,7 +150,7 @@ impl Handler for Tsig {
         let Some(raw) = req.raw.clone() else {
             return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADSIG)));
         };
-        let signer = match TSigner::new(secret.key.clone(), secret.algorithm, secret.name.clone(), FUDGE) {
+        let signer = match TSigner::new(secret.key.clone(), secret.algorithm.clone(), secret.name.clone(), FUDGE) {
             Ok(s) => s,
             Err(_) => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY))),
         };

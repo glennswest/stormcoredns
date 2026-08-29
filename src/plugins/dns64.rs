@@ -9,7 +9,7 @@
 //! }
 //! ```
 
-use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
+use crate::plugin::{Controller, DnsResult, Handler, Next, Request};
 use async_trait::async_trait;
 use hickory_proto::op::ResponseCode;
 use hickory_proto::rr::rdata::AAAA;

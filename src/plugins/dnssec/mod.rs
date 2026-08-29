@@ -15,7 +15,6 @@
 pub mod keys;
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
-use anyhow::Result;
 use async_trait::async_trait;
 use hickory_proto::op::{Message, ResponseCode};
 use hickory_proto::rr::dnssec::rdata::{DNSSECRData, NSEC};
@@ -58,7 +57,6 @@ const BITMAP: &[RecordType] = &[
     RecordType::TXT,
     RecordType::AAAA,
     RecordType::SRV,
-    RecordType::CERT,
     RecordType::SSHFP,
     RecordType::RRSIG,
     RecordType::NSEC,
@@ -74,7 +72,6 @@ const APEX_BITMAP: &[RecordType] = &[
     RecordType::TXT,
     RecordType::AAAA,
     RecordType::SRV,
-    RecordType::CERT,
     RecordType::SSHFP,
     RecordType::RRSIG,
     RecordType::NSEC,

@@ -22,8 +22,27 @@ impl GeoIp {
     fn client_ip(&self, req: &Request) -> IpAddr {
         if self.edns_subnet {
             if let Some(e) = req.msg.edns() {
-                if let Some(EdnsOption::Subnet(cs)) = e.option(EdnsCode::Subnet) {
-                    return cs.addr();
+                if let Some(opt @ EdnsOption::Subnet(_)) = e.option(EdnsCode::Subnet) {
+                    // family(2) source(1) scope(1) address(n), RFC 7871
+                    if let Ok(b) = Vec::<u8>::try_from(opt) {
+                        if b.len() >= 4 {
+                            let family = u16::from_be_bytes([b[0], b[1]]);
+                            let addr = &b[4..];
+                            match family {
+                                1 => {
+                                    let mut o = [0u8; 4];
+                                    o[..addr.len().min(4)].copy_from_slice(&addr[..addr.len().min(4)]);
+                                    return IpAddr::from(o);
+                                }
+                                2 => {
+                                    let mut o = [0u8; 16];
+                                    o[..addr.len().min(16)].copy_from_slice(&addr[..addr.len().min(16)]);
+                                    return IpAddr::from(o);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
         }

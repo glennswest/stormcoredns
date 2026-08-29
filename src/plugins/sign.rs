@@ -1,4 +1,4 @@
-//! `sign` — offline zone signing: adds DNSKEY/CDS/CDNSKEY, an NSEC chain
+//! `sign` — offline zone signing: adds DNSKEY, an NSEC chain
 //! and RRSIGs to a zone file and writes `db.<origin>.signed` for the
 //! `file` plugin to serve; re-signs before signatures expire.
 //!
@@ -18,8 +18,7 @@ use crate::plugins::dnssec::rrsets;
 use crate::plugins::file::zone::Zone;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use hickory_proto::rr::dnssec::rdata::{DNSSECRData, CDNSKEY, CDS, DNSKEY, NSEC};
-use hickory_proto::rr::dnssec::DigestType;
+use hickory_proto::rr::dnssec::rdata::{DNSSECRData, NSEC};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -65,11 +64,6 @@ impl Signer {
         let dnskey_ttl = 3600;
         for k in &self.keys {
             records.push(k.dnskey_record(&apex, dnskey_ttl));
-            let dk: &DNSKEY = &k.dnskey;
-            records.push(Record::from_rdata(apex.clone(), dnskey_ttl, RData::DNSSEC(DNSSECRData::CDNSKEY(CDNSKEY::new(dk.zone_key(), dk.secure_entry_point(), dk.revoke(), dk.algorithm(), dk.public_key().to_vec())))));
-            if let Ok(ds) = dk.to_ds(&apex, DigestType::SHA256) {
-                records.push(Record::from_rdata(apex.clone(), dnskey_ttl, RData::DNSSEC(DNSSECRData::CDS(CDS::new(ds.key_tag(), ds.algorithm(), ds.digest_type(), ds.digest().to_vec())))));
-            }
         }
 
         // NSEC chain over all owner names in canonical order
@@ -99,14 +93,14 @@ impl Signer {
         let delegations: Vec<Name> = by_name.iter().filter(|(n, t)| **n != apex && t.contains(&RecordType::NS)).map(|(n, _)| n.clone()).collect();
         let mut sigs = Vec::new();
         for set in rrsets(&records) {
-            let owner = &set[0].name();
+            let owner: &Name = set[0].name();
             let t = set[0].record_type();
-            let below_cut = delegations.iter().any(|d| d.zone_of(owner) && (*owner != *d || !matches!(t, RecordType::DS | RecordType::NSEC)));
-            if below_cut && !(owner == &apex) {
-                // records at/below a delegation are not signed by the parent (except DS/NSEC at the cut)
-                if !(delegations.contains(owner) && matches!(t, RecordType::DS | RecordType::NSEC)) {
-                    continue;
-                }
+            // records at/below a delegation are not signed by the parent,
+            // except DS and NSEC at the cut itself
+            let at_cut = delegations.iter().any(|d| d == owner);
+            let below_cut = delegations.iter().any(|d| d.zone_of(owner) && d != owner);
+            if *owner != apex && (below_cut || (at_cut && !matches!(t, RecordType::DS | RecordType::NSEC))) {
+                continue;
             }
             for k in &self.keys {
                 sigs.push(k.sign_rrset(&set, &apex, inception, expiration)?);

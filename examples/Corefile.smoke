@@ -1,0 +1,13 @@
+# Smoke-test Corefile: unprivileged port, forwards to the lab resolver.
+.:1053 {
+    errors
+    log
+    health :18080
+    ready :18181
+    prometheus :19153
+    cache 30
+    forward . 192.168.8.252
+    loop
+    reload
+    loadbalance
+}

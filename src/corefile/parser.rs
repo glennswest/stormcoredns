@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(b[0].keys, vec![".:1053"]);
         let names: Vec<&str> = b[0].directives.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, vec!["whoami", "log", "forward"]);
-        assert_eq!(b[0].directives[2].tokens.len(), 8);
+        assert_eq!(b[0].directives[2].tokens.len(), 7);
     }
 
     #[test]

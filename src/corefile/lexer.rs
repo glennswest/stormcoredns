@@ -52,14 +52,14 @@ pub fn lex(input: &str, file: &str) -> Vec<Token> {
             continue;
         }
         // line continuation: backslash followed by newline
+        // (caddy folds the newline: the next line is still the same "line"
+        // for the parser's same-line argument rule)
         if c == '\\' && i + 1 < n && chars[i + 1] == '\n' {
             i += 2;
-            line += 1;
             continue;
         }
         if c == '\\' && i + 2 < n && chars[i + 1] == '\r' && chars[i + 2] == '\n' {
             i += 3;
-            line += 1;
             continue;
         }
         // quoted token

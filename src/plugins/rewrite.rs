@@ -657,6 +657,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Reply;
     use hickory_proto::rr::rdata::A;
 
     struct Echo;

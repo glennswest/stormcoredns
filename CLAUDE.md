@@ -76,6 +76,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] Docs (README, architecture, plugin API, plugin status), example Corefiles, Containerfile (scratch)
 - [x] Live smoke test on dev: file zone (wildcards, CNAME, delegation, glue), AXFR over TCP with view, hosts, rewrite→template, health/ready/metrics
 - [x] v0.1.0 tagged 2026-08-29 (release binary 14.8 MB, 53 directives)
-- [ ] Container image built with podman and pushed to the mkube registry
+- [x] Container image built with podman on dev: `localhost/stormcoredns:0.1.0` (scratch, musl static, 15.1 MB)
+- [ ] Push the image to the mkube registry / GHCR
 - [ ] Run against a real rustkube/Kubernetes cluster (kubernetes plugin end-to-end)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`

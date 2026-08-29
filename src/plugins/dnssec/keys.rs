@@ -54,7 +54,8 @@ fn build(pair: KeyPair<Private>, algorithm: Algorithm, name: &str, ksk: bool) ->
 
 /// Generate a fresh key (tests, and `sign` when asked to).
 pub fn generate(algorithm: Algorithm, name: &str) -> Result<DnsKey> {
-    let pair = KeyPair::generate(algorithm).map_err(|e| anyhow!("generate: {}", e))?;
+    let pkcs8 = KeyPair::generate_pkcs8(algorithm).map_err(|e| anyhow!("generate: {}", e))?;
+    let pair = KeyFormat::Pkcs8.decode_key(&pkcs8, None, algorithm).map_err(|e| anyhow!("decode generated key: {}", e))?;
     build(pair, algorithm, name, true)
 }
 

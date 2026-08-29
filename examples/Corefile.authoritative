@@ -1,0 +1,44 @@
+# Authoritative + site zones on one server, with split horizon.
+# Used by the smoke test on dev (unprivileged ports).
+
+# internal clients see the full zone
+example.org:1053 {
+    view internal {
+        expr incidr(client_ip(), '127.0.0.0/8') || incidr(client_ip(), '10.0.0.0/8')
+    }
+    file db.example.org
+    transfer {
+        to *
+    }
+    log
+    errors
+}
+
+# everyone else gets the same zone but minimal answers and no transfers
+example.org:1053 {
+    file db.example.org
+    minimal
+    acl {
+        block type AXFR
+    }
+    errors
+}
+
+.:1053 {
+    hosts {
+        10.9.9.9 static.test
+        fallthrough
+    }
+    rewrite name suffix .old.test. .new.test. answer auto
+    template IN A new.test {
+        answer "{{ .Name }} 60 IN A 10.1.1.1"
+    }
+    any
+    cache 30
+    forward . 192.168.8.252
+    health :18080
+    ready :18181
+    prometheus :19153
+    errors
+    log
+}

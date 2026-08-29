@@ -1,0 +1,19 @@
+$TTL 3600
+$ORIGIN example.org.
+@       IN SOA  ns1.example.org. hostmaster.example.org. (
+                2026082901 ; serial
+                7200       ; refresh
+                3600       ; retry
+                1209600    ; expire
+                300 )      ; minimum
+@       IN NS   ns1.example.org.
+ns1     IN A    192.0.2.1
+www     IN A    192.0.2.10
+www     IN AAAA 2001:db8::10
+alias   IN CNAME www
+mail    IN MX   10 www
+*.wild  IN A    192.0.2.99
+sub     IN NS   ns.sub.example.org.
+ns.sub  IN A    192.0.2.50
+_sip._tcp IN SRV 10 60 5060 www
+txt     IN TXT  "hello" "world"

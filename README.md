@@ -62,7 +62,9 @@ cargo build --release          # needs protoc for the gRPC service
 ./target/release/stormcoredns -conf examples/Corefile.kubernetes
 ```
 
-The container image is built `FROM scratch`:
+Published image: `ghcr.io/glennswest/stormcoredns:0.1.0`; a drop-in cluster manifest is in
+`deploy/kubernetes/coredns.yaml` and the integration notes in
+[docs/integration.md](docs/integration.md). The image is built `FROM scratch`:
 
 ```bash
 podman build -t stormcoredns:latest .

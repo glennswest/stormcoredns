@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 2026-08-30
+- **docs:** `docs/integration.md` (image, ports, probes, RBAC, rustkube API requirements, Cilium notes) and `deploy/kubernetes/coredns.yaml` drop-in manifest.
+- **chore:** Image published to `ghcr.io/glennswest/stormcoredns:0.1.0` / `:latest`.
+
 ## [v0.1.0] — 2026-08-29
 
 ### Added

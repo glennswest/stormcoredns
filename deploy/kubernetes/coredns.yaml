@@ -104,7 +104,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: coredns
-          image: ghcr.io/glennswest/stormcoredns:0.1.0
+          image: 192.168.200.3:5000/stormcoredns:0.1.0
           imagePullPolicy: IfNotPresent
           args: ["-conf", "/etc/coredns/Corefile"]
           resources:

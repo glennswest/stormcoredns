@@ -8,7 +8,7 @@ the cluster DNS. It is a drop-in for CoreDNS: same image entrypoint
 
 | | |
 |---|---|
-| registry | `ghcr.io/glennswest/stormcoredns:0.1.0` (also `:latest`) — mkube's registry watcher mirrors it to `192.168.200.3:5000` |
+| registry | `192.168.200.3:5000/stormcoredns:0.1.0` (also `:latest`) — the mkube registry; pushed from dev with `podman push --tls-verify=false` |
 | base | `scratch`: one static musl binary at `/coredns` + `/etc/ssl/certs/ca-certificates.crt` |
 | size | 15.1 MB |
 | arch | linux/amd64 (the `Containerfile` honours `TARGETARCH`; build with `--platform linux/arm64` for MikroTik/ARM nodes) |

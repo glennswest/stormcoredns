@@ -76,6 +76,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] Docs (README, architecture, plugin API, plugin status), example Corefiles, Containerfile (scratch)
 - [x] Live smoke test on dev: file zone (wildcards, CNAME, delegation, glue), AXFR over TCP with view, hosts, rewrite→template, health/ready/metrics
 - [x] v0.1.0 tagged 2026-08-29 (release binary 14.8 MB, 53 directives)
+- [x] v0.1.1 (2026-08-30): plugin.cfg order fix for #1 (kubernetes before forward); image 0.1.1 in the local registry, release assets attached
 - [x] Container image built with podman on dev: `localhost/stormcoredns:0.1.0` (scratch, musl static, 15.1 MB)
 - [x] GitHub release v0.1.0 carries the image as a docker-archive tar (`stormcoredns-0.1.0-image.tar.gz`), the static binary and SHA256SUMS; assets are built into `/build/assets/stormcoredns` on dev
 - [x] Pushed `192.168.200.3:5000/stormcoredns:0.1.0` and `:latest` (2026-08-30, `podman push --tls-verify=false`). GHCR is not used.

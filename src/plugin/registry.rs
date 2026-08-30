@@ -59,6 +59,11 @@ directives! {
     "template"    => Some(crate::plugins::template::setup),
     "transfer"    => Some(crate::plugins::transfer::setup),
     "hosts"       => Some(crate::plugins::hosts::setup),
+    "route53"     => Some(crate::plugins::route53::setup),
+    "azure"       => Some(crate::plugins::azure::setup),
+    "clouddns"    => Some(crate::plugins::clouddns::setup),
+    "k8s_external"=> Some(crate::plugins::k8s_external::setup),
+    "kubernetes"  => Some(crate::plugins::kubernetes::setup),
     "file"        => Some(crate::plugins::file::setup),
     "auto"        => Some(crate::plugins::auto::setup),
     "secondary"   => Some(crate::plugins::secondary::setup),
@@ -71,11 +76,29 @@ directives! {
     "on"          => Some(crate::plugins::on::setup),
     "sign"        => Some(crate::plugins::sign::setup),
     "view"        => Some(crate::plugins::view::setup),
-    "kubernetes"  => Some(crate::plugins::kubernetes::setup),
-    "k8s_external"=> Some(crate::plugins::k8s_external::setup),
-    "clouddns"    => Some(crate::plugins::clouddns::setup),
-    "azure"       => Some(crate::plugins::azure::setup),
-    "route53"     => Some(crate::plugins::route53::setup),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The order must match CoreDNS's plugin.cfg: backends that answer
+    /// authoritatively (kubernetes, file, etcd...) run before `forward`,
+    /// otherwise `forward .` swallows every query (issue #1).
+    #[test]
+    fn plugin_cfg_order() {
+        let pos = |n: &str| position(n).unwrap();
+        assert!(pos("kubernetes") < pos("forward"));
+        assert!(pos("k8s_external") < pos("kubernetes"));
+        assert!(pos("hosts") < pos("route53"));
+        assert!(pos("kubernetes") < pos("file"));
+        assert!(pos("etcd") < pos("loop"));
+        assert!(pos("loop") < pos("forward"));
+        assert!(pos("cache") < pos("kubernetes"));
+        assert!(pos("prometheus") < pos("errors"));
+        assert!(pos("sign") < pos("view"));
+        assert_eq!(ORDER.len(), 53);
+    }
 }
 
 pub fn lookup(name: &str) -> Option<&'static DirectiveDef> {

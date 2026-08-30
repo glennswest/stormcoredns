@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v0.1.1] — 2026-08-30
+
+### Fixed
+- Plugin chain order now matches CoreDNS `plugin.cfg`: `route53`, `azure`, `clouddns`, `k8s_external`, `kubernetes` run after `hosts` and before `file`/`auto`/`secondary`/`etcd`/`loop`/`forward`. Previously `forward .` answered every `cluster.local` query with upstream NXDOMAIN (#1). A test pins the order.
+
 ### 2026-08-30
 - **docs:** `docs/integration.md` (image, ports, probes, RBAC, rustkube API requirements, Cilium notes) and `deploy/kubernetes/coredns.yaml` drop-in manifest.
 - **chore:** GitHub release v0.1.0 with the container image as a tar (`docker-archive`), the static binary and checksums.

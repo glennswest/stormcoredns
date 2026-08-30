@@ -10,7 +10,7 @@ is [docs/plugin-api.md](docs/plugin-api.md); per-plugin status is in
 
 ## Version
 
-`0.1.0` (tag v0.1.0) — defined in `Cargo.toml` only (`src/main.rs` reads
+`0.1.1` (tag v0.1.1) — defined in `Cargo.toml` only (`src/main.rs` reads
 `env!("CARGO_PKG_VERSION")`).
 
 ## Build on dev, never on this Mac

@@ -62,7 +62,7 @@ cargo build --release          # needs protoc for the gRPC service
 ./target/release/stormcoredns -conf examples/Corefile.kubernetes
 ```
 
-Published image: `192.168.200.3:5000/stormcoredns:0.1.0` (local mkube registry); a drop-in cluster manifest is in
+Published image: `192.168.200.3:5000/stormcoredns:0.1.1` (local mkube registry); a drop-in cluster manifest is in
 `deploy/kubernetes/coredns.yaml` and the integration notes in
 [docs/integration.md](docs/integration.md). The image is built `FROM scratch`:
 

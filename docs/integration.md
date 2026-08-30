@@ -8,17 +8,17 @@ the cluster DNS. It is a drop-in for CoreDNS: same image entrypoint
 
 | | |
 |---|---|
-| registry | `192.168.200.3:5000/stormcoredns:0.1.0` (also `:latest`) — the mkube registry; pushed from dev with `podman push --tls-verify=false` |
+| registry | `192.168.200.3:5000/stormcoredns:0.1.1` (also `:latest`) — the mkube registry; pushed from dev with `podman push --tls-verify=false` |
 | base | `scratch`: one static musl binary at `/coredns` + `/etc/ssl/certs/ca-certificates.crt` |
 | size | 15.1 MB |
 | arch | linux/amd64 (the `Containerfile` honours `TARGETARCH`; build with `--platform linux/arm64` for MikroTik/ARM nodes) |
 | entrypoint | `/coredns` — pass `-conf /etc/coredns/Corefile` |
 | user | runs as root by default; only `NET_BIND_SERVICE` is needed for :53 |
 
-Release assets (https://github.com/glennswest/stormcoredns/releases/tag/v0.1.0):
-`stormcoredns-0.1.0-image.tar.gz` (docker-archive of the image, load with
+Release assets (https://github.com/glennswest/stormcoredns/releases/tag/v0.1.1):
+`stormcoredns-0.1.1-image.tar.gz` (docker-archive of the image, load with
 `podman load -i` / `docker load -i`, or feed it to the stormcos image store),
-`stormcoredns-0.1.0-linux-amd64.tar.gz` (the static binary alone) and
+`stormcoredns-0.1.1-linux-amd64.tar.gz` (the static binary alone) and
 `SHA256SUMS`.
 
 There is no shell, no libc and no writable filesystem requirement

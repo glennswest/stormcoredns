@@ -15,6 +15,12 @@ the cluster DNS. It is a drop-in for CoreDNS: same image entrypoint
 | entrypoint | `/coredns` — pass `-conf /etc/coredns/Corefile` |
 | user | runs as root by default; only `NET_BIND_SERVICE` is needed for :53 |
 
+Release assets (https://github.com/glennswest/stormcoredns/releases/tag/v0.1.0):
+`stormcoredns-0.1.0-image.tar.gz` (docker-archive of the image, load with
+`podman load -i` / `docker load -i`, or feed it to the stormcos image store),
+`stormcoredns-0.1.0-linux-amd64.tar.gz` (the static binary alone) and
+`SHA256SUMS`.
+
 There is no shell, no libc and no writable filesystem requirement
 (`readOnlyRootFilesystem: true` works; `reload` only reads the Corefile).
 

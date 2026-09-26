@@ -83,3 +83,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] `deploy/kubernetes/coredns.yaml` + `docs/integration.md` for the stormcos integration (asked for by the owner 2026-08-30)
 - [ ] Run against a real rustkube/Kubernetes cluster (kubernetes plugin end-to-end)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`
+
+### In progress — #3 docs from the code (2026-09-26)
+- [ ] README, docs/, CLAUDE.md and module docs rewritten from the code as it is now; delivery is the `coredns` golden built by stormcos stage mode (also closes #2: no mkube registry)
+- [ ] Every doc claim the code does not back filed as an issue

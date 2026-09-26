@@ -95,10 +95,10 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [ ] Test containers per the stormcos test standard (#5)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`
 
-### In progress — #3 docs from the code (2026-09-26)
+### Done — #3 docs from the code (2026-09-26)
 - [x] README, docs/, CLAUDE.md and module docs rewritten from the code as it is now; delivery is the `coredns` golden built by stormcos stage mode (also closes #2: no mkube registry)
 - [x] Every doc claim the code does not back filed as an issue (#6–#16)
-- [ ] sc-build green, close #2 and #3
+- [x] sc-build green (de6be9a, 54 tests), #2 and #3 closed
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-09-26
+- **docs:** README, `docs/integration.md`, `docs/plugins.md`, `docs/architecture.md`, `docs/plugin-api.md` and CLAUDE.md rewritten from the code (#3): every flag, env var, key scheme and default port; health/ready/metrics/pprof endpoints and defaults; full metric list; per-plugin status now says `partial`/`differs` where the code does, with the issues it links.
+- **docs:** Delivery is the `coredns` golden built by stormcos stage mode (`stormcentral component stage coredns`); the retired mkube registry is gone from the docs and the non-stormcos manifest (#2).
+- **docs:** Module comments corrected (Dispenser, `Instance::start`/`stop`, `wire`, `transfer` data sources, `template` regex case, CLI flags).
+- **chore:** Filed the gaps the audit found: #6–#16.
+
 ## [v0.1.1] — 2026-08-30
 
 ### Fixed

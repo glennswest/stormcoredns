@@ -29,10 +29,12 @@ Corefile ──lex/parse──▶ ServerBlock{keys, directives}
 
 ## Corefile
 
-`src/corefile/` is a faithful port of caddy v1's lexer and parser:
-tokens carry line numbers so `NextArg`/`NextLine`/`NextBlock` semantics are
-identical, `import` splices files/globs/snippets, `{$ENV}` expands, and a
-single brace-less block is accepted. `Dispenser` is the token cursor and
+`src/corefile/` ports caddy v1's lexer and parser: tokens carry line
+numbers so `NextArg`/`NextLine`/`NextBlock` semantics are identical,
+`import` splices files/globs/snippets (inside a server block only; paths are
+relative to the Corefile's directory; nesting is capped at 20), `{$ENV}` and
+`{%ENV%}` expand, keys may be comma-separated, and a brace-less block is
+accepted as the first (and then only) block. `Dispenser` is the token cursor and
 `Controller` wraps it with the config being built (`c.config`), the
 current key, `once_per_server_block`, and startup/shutdown hooks.
 
@@ -47,43 +49,83 @@ header, log, prometheus) inspects what `next.serve` returns.
 
 `Reply` is `Msg(Message)`, `Rcode(code)` (nothing written; the server
 answers with the code), `Drop` (send nothing) or `Multi(Vec<Message>)`
-(zone transfers). Errors are `PluginError{plugin, rcode, source}`;
+(zone transfers — every message is written on TCP/DoT; UDP, DoH, DoQ and
+gRPC send only the first). Errors are `PluginError{plugin, rcode, source}`;
 `errors` logs them, the server answers with `rcode`.
 
 Cross-plugin contracts that CoreDNS expresses as Go interfaces are default
 methods on `Handler`: `ready()`, `autopath()`, `transfer()`,
-`external_addrs()`, `metadata()`. Because a plugin's `setup` runs before
-later plugins exist, `plugins::wire::register` defers the lookup of a
-sibling handler until the block's chain is complete (CoreDNS's
-`c.OnStartup` + `config.Handler("kubernetes")`).
+`external_addrs()`, `external_reverse()`, `metadata()` (and `health()`,
+which nothing calls). Because a plugin's `setup` runs before later plugins
+exist, `plugins::wire::register` defers the lookup of a sibling handler
+until every config's chain is finalised (`plugins::post_finalize`, before
+the listeners bind) — CoreDNS's `c.OnStartup` +
+`config.Handler("kubernetes")`.
+
+Unknown directives are rejected before any `setup` runs. A panic inside a
+plugin is caught: the client gets SERVFAIL and `coredns_panics_total`
+increments.
 
 ## Servers
+
+A server-block key is `[scheme://]zone[:port]` (`src/server/config.rs`):
+`dns` (53, UDP+TCP), `tls` (853, DoT), `https` (443, DoH at `/dns-query`),
+`quic` (853, DoQ), `grpc` (443, `coredns.dns.DnsService/Query`). `tls://`
+and `quic://` need the `tls` plugin; `https://` and `grpc://` fall back to
+plaintext with a warning. `-dns.port`/`PORT` only change `dns://` keys
+without a port.
 
 One `Server` per (transport, bind address). Zone dispatch is the CoreDNS
 algorithm: strip labels from the query name until a configured zone
 matches, then take the first config whose `view` expression accepts the
-request. Listeners bind with `SO_REUSEPORT`, so a reload starts the new
-instance before the old one stops. Stream transports pipeline: each
-query is answered as it completes, writes are serialised through a
-channel. AXFR replies are streamed as multiple messages.
+request (view configs sort ahead of the catch-all); if none accepts, keep
+stripping; no zone at all is REFUSED. View filters run here, before the
+chain, so `metadata()` in a view expression sees nothing (#12).
+
+Listeners bind with `SO_REUSEPORT` (UDP sockets also get 4 MiB buffers;
+IPv6 sockets are dual-stack), so a reload starts the new instance before
+the old one stops — but see #8: `:port` is resolved by probe-binding
+`[::]:port`, which fails while the old instance holds it, so the new
+listener is IPv4-only. Stream transports pipeline: each query is answered as
+it completes, writes are serialised through a channel; idle 10 s, read 2 s,
+write 2 s unless `timeouts` says otherwise. AXFR replies are built in memory
+and written as several messages.
+
+Before the chain: malformed → FORMERR (or nothing if the ID is unreadable),
+EDNS version ≠ 0 → BADVERS, no question → REFUSED. After it, replies are
+encoded at `req.size()` and truncated (TC) to fit.
 
 `server::self_lookup` resolves a name through the server's own chain —
-what CoreDNS does with `upstream` by querying itself over loopback — and
-is used for external CNAME targets (`file`, `kubernetes`), `dns64`, and
+what CoreDNS does with `upstream` by querying itself over loopback — with a
+depth limit of 8, preferring the server the request arrived on. It is used
+for external CNAME targets (`file`, `kubernetes`, `etcd`), `dns64`, and
 `rewrite cname`.
 
 ## Lifecycle
 
-`Instance::start` builds configs, binds every listener, runs startup
-hooks, then serves. `Instance::stop` runs shutdown hooks first (so
-`health`'s lameduck keeps answering DNS while `/health` reports 503), then
-cancels listeners. `reload` hashes the Corefile and, on change, signals
-the main loop, which starts a new instance and stops the old one; a failed
-reload keeps the old instance and runs `restart_failed` hooks.
+`Instance::start` builds configs, finalises chains, runs
+`plugins::post_finalize` (wiring, ready's plugin list, health, metrics),
+binds every listener, runs startup hooks (a failing hook aborts the start),
+then serves. `Instance::stop` runs shutdown hooks first (so `health`'s
+lameduck keeps answering DNS while `/health` reports 503), then cancels
+listeners, waiting up to 5 s per task. `reload` hashes the Corefile
+(SHA-256) and, on change, signals the main loop; SIGHUP and SIGUSR1 do the
+same. The main loop starts a new instance and stops the old one; a failed
+reload keeps the old instance, increments `coredns_reload_failed_total` and
+runs `restart_failed` hooks (none are registered today). Open bugs in this
+path: #6 (lameduck on reload leaves `/health` at 503), #7 (the watcher does
+not re-arm after a failed reload).
+
+The HTTP endpoints (`health`, `ready`, `prometheus`, `pprof`) share a
+registry keyed by address; on reload the new instance takes the listener
+over from the old one.
 
 ## Metrics
 
 `metrics.rs` owns the global Prometheus registry and the core
-`coredns_dns_*` collectors; plugins register their own with the same
-names CoreDNS uses (`coredns_cache_*`, `coredns_forward_*`,
-`coredns_kubernetes_*` …) so dashboards and alerts carry over.
+collectors (`coredns_dns_*`, `panics_total`, `plugin_enabled`,
+`build_info`, `health_*`, `reload_*`); the `prometheus` plugin does the
+per-request counting. Plugins register their own with the names CoreDNS
+uses (`coredns_cache_*`, `coredns_forward_*`, `coredns_kubernetes_*` …) so
+dashboards and alerts carry over. There are no `process_*` metrics. The
+full list is in [plugins.md](plugins.md#metrics).

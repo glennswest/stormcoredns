@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-26 (#4)
+- **docs:** `docs/presentation.md` — a 14-slide Marp deck: purpose, place in stormcos (with the real runtime dependencies; stormcentral#35 corrects the graph), how it works, what the kubernetes plugin serves, the plugin set and transports, CLI/config/health/metrics, how it ships (the `coredns` golden) and is operated, gaps, planned work, and the open issues that matter. Rendered output (`out/`, `docs/presentation.{html,pdf}`) is git-ignored.
+
 ### 2026-09-26
 - **docs:** README, `docs/integration.md`, `docs/plugins.md`, `docs/architecture.md`, `docs/plugin-api.md` and CLAUDE.md rewritten from the code (#3): every flag, env var, key scheme and default port; health/ready/metrics/pprof endpoints and defaults; full metric list; per-plugin status now says `partial`/`differs` where the code does, with the issues it links.
 - **docs:** Delivery is the `coredns` golden built by stormcos stage mode (`stormcentral component stage coredns`); the retired mkube registry is gone from the docs and the non-stormcos manifest (#2).

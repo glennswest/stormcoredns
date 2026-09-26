@@ -48,7 +48,7 @@ src/server/            key parsing, listener grouping, UDP/TCP/DoT/DoH/DoQ/gRPC,
 src/plugins/           one module per directive (prometheus = metrics.rs; file/, dnssec/, kubernetes/ are dirs)
 src/dnsutil/           name helpers, reverse zones, upstream parsing, EDNS0, durations
 src/metrics.rs         global Prometheus registry + core metrics
-docs/                  architecture, plugin API, per-plugin status + metrics, stormcos integration
+docs/                  architecture, plugin API, per-plugin status + metrics, stormcos integration, presentation.md (Marp)
 examples/              Corefiles + a zone file
 ```
 
@@ -100,9 +100,9 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] Every doc claim the code does not back filed as an issue (#6–#16)
 - [x] sc-build green (de6be9a, 54 tests), #2 and #3 closed
 
-### In progress — #4 presentation (2026-09-26)
-- [ ] `docs/presentation.md`: Marp deck (8–15 slides) drawn from the #3 docs, every claim checkable against the code
-- [ ] stormcentral's graph has `stormcoredns depends_on stormd`, but the `coredns` golden is a bare binary (no stormd) — file on stormcentral, show the real runtime dependencies on the slide
+### Done — #4 presentation (2026-09-26)
+- [x] `docs/presentation.md`: Marp deck (14 slides) drawn from the #3 docs, every claim checkable against the code; renders with `npx @marp-team/marp-cli@4`
+- [x] stormcentral's graph has `stormcoredns depends_on stormd`, but the `coredns` golden is a bare binary (no stormd) — filed stormcentral#35; the slide shows the real runtime dependencies
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

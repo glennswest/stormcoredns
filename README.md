@@ -218,7 +218,7 @@ src/plugins/        one module per directive (prometheus is metrics.rs; file/, d
 src/dnsutil/        names, reverse zones, upstream parsing, EDNS0, durations
 src/metrics.rs      global registry and core coredns_* collectors
 proto/dns.proto     the CoreDNS gRPC service
-docs/               architecture, plugin API, per-plugin status, stormcos integration
+docs/               architecture, plugin API, per-plugin status, stormcos integration, presentation.md (Marp deck)
 examples/           Corefiles (kubernetes, authoritative, smoke) and a zone file
 deploy/kubernetes/  upstream-style manifest for non-stormcos clusters
 ```

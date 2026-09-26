@@ -242,7 +242,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             match c.val() {
                 "match" => {
                     for r in c.remaining_args() {
-                        // Go's default is case-sensitive; names are lowercased, so add (?i) for parity with common usage
+                        // compiled as given (case-sensitive, like Go); query names are lowercased
                         t.regex.push(Regex::new(&r).map_err(|e| c.errf(format!("invalid regex {}: {}", r, e)))?);
                     }
                 }

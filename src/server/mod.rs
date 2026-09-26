@@ -463,8 +463,9 @@ pub async fn self_lookup(req: &Request, name: hickory_proto::rr::Name, qtype: hi
 }
 
 impl Instance {
-    /// Build configs from parsed server blocks, run startup hooks, bind
-    /// listeners, and start serving.
+    /// Build configs from parsed server blocks, finalise chains and run
+    /// post-finalize wiring, bind listeners, run startup hooks (a failing
+    /// hook aborts the start), and start serving.
     pub async fn start(blocks: Vec<crate::corefile::ServerBlock>, opts: &build::BuildOptions) -> Result<Instance> {
         let mut built = build::build(blocks, opts)?;
         let mut shutdown_hooks = Vec::new();
@@ -556,7 +557,7 @@ impl Instance {
         Ok(Instance { servers, configs, cancel, tasks, shutdown_hooks, restart_failed_hooks })
     }
 
-    /// Stop listeners and run shutdown hooks.
+    /// Run shutdown hooks, then stop listeners.
     pub async fn stop(mut self) {
         // hooks first: `health` lameduck keeps DNS answering while the
         // endpoint reports 503, then the listeners go away

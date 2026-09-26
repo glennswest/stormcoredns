@@ -1,6 +1,7 @@
 //! `transfer` — outbound zone transfers (AXFR, and IXFR answered as a full
 //! transfer) for zones served by plugins that implement
-//! `Handler::transfer` (file, secondary, auto, sign), plus NOTIFY.
+//! `Handler::transfer` (file, auto, secondary, route53, azure, clouddns),
+//! plus NOTIFY.
 //!
 //! ```text
 //! transfer [ZONE...] {

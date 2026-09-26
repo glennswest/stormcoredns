@@ -56,8 +56,8 @@ pub struct ParsedKey {
     pub port: u16,
     /// True when the key carried an explicit port.
     pub explicit_port: bool,
-    /// Bind IP given in the key (`dns://.:53` has none, `127.0.0.1:53`-style
-    /// keys are not zones but Caddy hosts; CoreDNS treats them as zones, we do too).
+    /// Always false and never read (#16). An IP in a key is a zone (its
+    /// reverse /32), as in CoreDNS; bind addresses come from `bind`.
     pub ipv4_only: bool,
 }
 

@@ -68,8 +68,9 @@ pub fn post_finalize(configs: &[std::sync::Arc<crate::server::config::ServerConf
 /// Deferred cross-plugin wiring: a plugin's `setup` runs before the
 /// plugins after it in `plugin.cfg` exist, so anything that needs a sibling
 /// handler (autopath → kubernetes, k8s_external → kubernetes, transfer →
-/// file/secondary) registers a closure here that runs once the server
-/// block's chain is complete (`c.OnStartup` + `config.Handler()` in CoreDNS).
+/// file/secondary, metadata → providers) registers a closure here that runs
+/// once, after every config's chain is finalised and before the listeners
+/// bind (`c.OnStartup` + `config.Handler()` in CoreDNS).
 pub mod wire {
     use crate::server::config::ServerConfig;
     use once_cell::sync::Lazy;

@@ -1,9 +1,8 @@
-//! The `Controller`: what a plugin's `setup` function receives.
-//!
-//! It is Caddy's `Dispenser` (a cursor over the tokens of every occurrence of
-//! one directive inside one server block) plus access to the server config
-//! being assembled. Method names follow caddy so upstream plugin `setup.go`
-//! files translate line for line:
+//! The `Dispenser`: caddy's cursor over the tokens of every occurrence of
+//! one directive inside one server block. A plugin's `setup` receives a
+//! `plugin::Controller`, which derefs to this and adds the server config
+//! being assembled (`src/plugin/controller.rs`). Method names follow caddy
+//! so upstream plugin `setup.go` files translate line for line:
 //!
 //! ```text
 //! for c.Next() {                     while c.next() {
@@ -32,7 +31,8 @@ impl std::error::Error for ConfigError {}
 #[derive(Debug, Clone)]
 pub struct Dispenser {
     pub tokens: Vec<Token>,
-    /// Index of the current token, or `usize::MAX` before the first `next()`.
+    /// Index of the current token; meaningful once `started` is set by the
+    /// first `next()`.
     cursor: usize,
     nesting: usize,
     started: bool,
@@ -143,8 +143,8 @@ impl Dispenser {
         self.current().map(|t| t.file.clone()).unwrap_or_default()
     }
 
-    /// Load `n` arguments from the current line into the slots; returns
-    /// false (without consuming) if fewer than `n` remain on the line.
+    /// The next `n` arguments on the current line; `None` (without
+    /// consuming) if fewer than `n` remain on the line.
     pub fn args(&mut self, n: usize) -> Option<Vec<String>> {
         let save = (self.cursor, self.started);
         let mut out = Vec::with_capacity(n);

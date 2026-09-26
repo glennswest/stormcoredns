@@ -30,3 +30,8 @@ temp/
 # GeoIP databases, zone signing keys (never commit)
 *.mmdb
 K*.private
+
+# Rendered presentation (npx @marp-team/marp-cli)
+out/
+docs/presentation.html
+docs/presentation.pdf

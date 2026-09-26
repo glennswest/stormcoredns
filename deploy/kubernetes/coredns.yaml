@@ -104,7 +104,10 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: coredns
-          image: 192.168.200.3:5000/stormcoredns:0.1.1
+          # Built from this repo's Containerfile and pushed to your registry.
+          # stormcos does not use this manifest: it runs the `coredns` golden
+          # from stormcos/deploy/manifests/80-coredns.yaml (docs/integration.md).
+          image: stormcoredns:0.1.1
           imagePullPolicy: IfNotPresent
           args: ["-conf", "/etc/coredns/Corefile"]
           resources:

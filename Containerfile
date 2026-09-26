@@ -1,4 +1,5 @@
-# Build with podman on the dev box:
+# Image for clusters outside stormcos (stormcos ships the `coredns` golden
+# instead, see docs/integration.md):
 #   podman build -t stormcoredns:latest .
 # The result is FROM scratch: one static binary plus CA roots.
 

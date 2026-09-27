@@ -22,7 +22,7 @@ requires:  []            no hardware. Needs the `coredns` golden, which is in
                          every stormcos profile except `storage`; on a node
                          without cluster DNS every suite fails its first DNS
                          check (short: apex-soa, medium: clusterip-a, long:
-                         wave-1), after exit 1, not 2.
+                         wave-1) and the run exits 1 (failed), not 2.
 privileged: no           a plain pod: no hostNetwork, no node access
 api:       namespaced    Services, Endpoints and EndpointSlices in the run's
                          own namespace (the runner's Role); no cluster read

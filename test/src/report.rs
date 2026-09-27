@@ -9,11 +9,11 @@ use std::time::Instant;
 
 /// What one test found. `Err` from a test is not an outcome: it means the
 /// suite could not go on (the API refused, the environment is missing), and
-/// the run ends with exit 2.
+/// the run ends with exit 2. No test skips: the suites need no hardware,
+/// only the cluster DNS every stormcos profile but `storage` has.
 pub enum Outcome {
     Pass(String),
     Fail(String),
-    Skip(String),
 }
 
 pub fn pass(d: impl Into<String>) -> anyhow::Result<Outcome> {
@@ -58,7 +58,6 @@ impl Report {
         match o {
             Outcome::Pass(d) => self.line(test, "pass", ms, &d, None),
             Outcome::Fail(d) => self.line(test, "fail", ms, &d, None),
-            Outcome::Skip(d) => self.line(test, "skip", ms, &d, None),
         }
         Ok(())
     }

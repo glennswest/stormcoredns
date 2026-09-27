@@ -55,9 +55,9 @@ handled by the Corefile parser.
 The kubernetes plugin has run in a real cluster. On stormcos 11.03
 (2026-09-21), under `80-coredns.yaml` against rustkube, it answered
 `kubernetes.default.svc.cluster.local` → `10.96.0.1` (stormcos CHANGELOG).
-The unit tests (`cargo test`, 54 of them) cover the parser, registry order,
-rewrite, cache, template, the zone engine, kubernetes name parsing, and other
-areas. The deployed server is tested from a pod by the test container in
+The server's unit tests (`cargo test`, 54 of them) cover the parser,
+registry order, rewrite, cache, template, the zone engine, kubernetes name
+parsing, and other areas. `cargo test --workspace` adds the test crate's 6. The deployed server is tested from a pod by the test container in
 `test/` ([test/README.md](test/README.md)), with short, medium and long
 suites per the stormcos test standard (#5). It builds, but it has not yet
 run on a test machine.

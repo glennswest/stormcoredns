@@ -20,14 +20,17 @@ test failed, and 2 when the suite could not run.
 suites:    short (< 2 min), medium (< 30 min), long (the night window)
 requires:  []            no hardware. Needs the `coredns` golden, which is in
                          every stormcos profile except `storage`; on a node
-                         without cluster DNS every suite fails at apex-soa.
+                         without cluster DNS every suite fails its first DNS
+                         check (short: apex-soa, medium: clusterip-a, long:
+                         wave-1), after exit 1, not 2.
 privileged: no           a plain pod: no hostNetwork, no node access
 api:       namespaced    Services, Endpoints and EndpointSlices in the run's
                          own namespace (the runner's Role); no cluster read
 targets:   the cluster DNS server in the pod's /etc/resolv.conf (kube-dns,
            10.96.0.10 on stormcos), port 53 UDP and TCP
 external:  none. medium's `forward-answers` sends one query for a
-           `.invalid` name (RFC 6761) through the node's upstream
+           `.invalid` name (RFC 6761), retransmitted once if lost, through
+           the node's upstream
 ```
 
 The runner's Job does not give it the cluster DNS address, and its Role cannot

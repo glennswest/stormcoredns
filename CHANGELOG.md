@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (docs refresh)
+- **docs:** Docs re-checked against the code and history since 2026-09-18. The server code is unchanged since the #3 rewrite. The stormcos coredns path (`80-coredns.yaml`, `build-goldens.sh`, golden `golden-coredns-0f272e81c6e0`) and stormcentral's test runner match what is documented. Fixed: `test/README.md` said a node without cluster DNS fails "at apex-soa" (only the short suite has it) and that `forward-answers` sends one query (it retransmits once); the README now counts the test crate's unit tests; CLAUDE.md's layout lists `test/`. Nothing new the docs promise that the code does not do; the open gaps remain #6–#16.
+
 ### 2026-09-27 (#5)
 - **test:** `test/`, the `stormcoredns-test` container per the stormcos test standard: `/test short|medium|long` against the cluster DNS from a pod, with JSON-lines results and exit 0/1/2. It finds the server and cluster domain in the pod's resolv.conf and checks against Services, Endpoints and EndpointSlices it creates in the run's namespace. short: SOA, Service A over UDP/TCP, SRV, NXDOMAIN, delete. medium: headless, PTR, ExternalName, pods, truncation vs TCP/EDNS, FORMERR, forward, load. long: overnight waves of Services with latency, residue and trend. `test/build.sh` builds the static binary; `test/Containerfile` packages it FROM scratch.
 - **build:** the repo is a Cargo workspace (`.`, `test`); the root package stays the default member, so the golden build is unchanged.

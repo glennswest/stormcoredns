@@ -50,6 +50,7 @@ src/dnsutil/           name helpers, reverse zones, upstream parsing, EDNS0, dur
 src/metrics.rs         global Prometheus registry + core metrics
 docs/                  architecture, plugin API, per-plugin status + metrics, stormcos integration, presentation.md (Marp)
 examples/              Corefiles + a zone file
+test/                  stormcoredns-test: the test container (/test short|medium|long, test/README.md); workspace member, not in the golden build
 ```
 
 ## Work plan

@@ -104,6 +104,19 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] `docs/presentation.md`: Marp deck (14 slides) drawn from the #3 docs, every claim checkable against the code; renders with `npx @marp-team/marp-cli@4`
 - [x] stormcentral's graph has `stormcoredns depends_on stormd`, but the `coredns` golden is a bare binary (no stormd) — filed stormcentral#35; the slide shows the real runtime dependencies
 
+### In progress — #5 test containers (2026-09-27)
+Design (stormcentral `docs/test-standard.md`, runner `src/testruns.rs`):
+the runner applies its own Job (`/test <suite>`, plain pod, SA `storm-test`
+with `*` in the run's namespace only, no cluster read). So the test finds the
+cluster DNS from its own `/etc/resolv.conf` (nameserver + `<ns>.svc.<domain>`
+search, written by rustkube-node's kubelet) and checks it against Services,
+Endpoints and EndpointSlices it creates in its own namespace.
+- [ ] `test/` crate `stormcoredns-test` (workspace member; tokio, hickory-proto, reqwest, serde_json — already in Cargo.lock), `test/build.sh`, `test/Containerfile` (scratch), `test/README.md` with metadata
+- [ ] short: SOA at the apex, Service A over UDP+TCP, SRV, NXDOMAIN+SOA, delete → NXDOMAIN
+- [ ] medium: headless A/SRV/hostnames, PTR, ExternalName, pods, dns-version, endpoint change, UDP truncation vs TCP/EDNS, FORMERR, forward path, case, concurrency
+- [ ] long: waves of Services ramped until the cluster pushes back; programming latency, query p50/p99, drain residue, probe slowdown vs wave 1
+- [ ] sc-build `--workspace --locked`; a real run via `stormcentral test run stormcoredns short`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck

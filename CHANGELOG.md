@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (docs refresh, second pass)
+- **docs:** Re-checked README, docs/, test/README.md and CLAUDE.md against the code and history since 2026-09-18. No code has changed since the morning refresh (06ff80c); only docs have. External facts re-verified: stormcentral `src/goldens.rs` still stages `coredns` from `STORMCOREDNS_SRC` (a stage-only golden, so it is absent from `stormcentral component list`); stormcos `build-goldens.sh` still builds the musl binary, stages `/stormcoredns` + `/coredns` as a 32M golden, with no upstream fallback; the latest golden is still `golden-coredns-0f272e81c6e0` (stormcos#107, open); `80-coredns.yaml`'s stale fallback comment is still stormcos#79. Nothing the docs promise that the code does not do beyond #6–#16, so no new issues.
+
 ### 2026-09-27 (#5 run attempt)
 - **docs:** Work plan: #5's first in-cluster run (54b2f2032b) now gets past the apiserver wait and stormcentral#56, and stops at C2NR0Q2's sbregistry refusing :5100; filed stormcentral#71.
 

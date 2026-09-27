@@ -247,8 +247,9 @@ comparisons that need checking against 1.12.
 
 ## Planned (not built)
 
-- **Planned:** test containers per the stormcos test standard, with
-  `stormcoredns-test` run as a Job on the test machines (#5).
+- **Built, not yet run on a machine:** `stormcoredns-test` (`test/`), the
+  short/medium/long suites per the stormcos test standard, run as a Job on
+  the test machines (#5).
 - **Planned:** fixes for the bugs on the next slide, cluster-DNS path first.
 - **Planned:** a `trace` exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`,
   CDS/CDNSKEY in `sign`, and `kubernetes multicluster`.

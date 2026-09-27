@@ -92,7 +92,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] ~~Pushed to the mkube registry~~ — superseded: mkube retired 2026-08-27; delivery is the `coredns` golden (#2)
 - [x] `deploy/kubernetes/coredns.yaml` + `docs/integration.md` for the stormcos integration (asked for by the owner 2026-08-30)
 - [x] Runs against rustkube as the cluster DNS (stormcos 11.03, 2026-09-21: `kubernetes.default.svc.cluster.local` → 10.96.0.1)
-- [ ] Test containers per the stormcos test standard (#5)
+- [ ] Test containers per the stormcos test standard (#5) — built; first in-cluster run pending (see below)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`
 
 ### Done — #3 docs from the code (2026-09-26)
@@ -111,11 +111,12 @@ with `*` in the run's namespace only, no cluster read). So the test finds the
 cluster DNS from its own `/etc/resolv.conf` (nameserver + `<ns>.svc.<domain>`
 search, written by rustkube-node's kubelet) and checks it against Services,
 Endpoints and EndpointSlices it creates in its own namespace.
-- [ ] `test/` crate `stormcoredns-test` (workspace member; tokio, hickory-proto, reqwest, serde_json — already in Cargo.lock), `test/build.sh`, `test/Containerfile` (scratch), `test/README.md` with metadata
-- [ ] short: SOA at the apex, Service A over UDP+TCP, SRV, NXDOMAIN+SOA, delete → NXDOMAIN
-- [ ] medium: headless A/SRV/hostnames, PTR, ExternalName, pods, dns-version, endpoint change, UDP truncation vs TCP/EDNS, FORMERR, forward path, case, concurrency
-- [ ] long: waves of Services ramped until the cluster pushes back; programming latency, query p50/p99, drain residue, probe slowdown vs wave 1
-- [ ] sc-build `--workspace --locked`; a real run via `stormcentral test run stormcoredns short`
+- [x] `test/` crate `stormcoredns-test` (workspace member; tokio, hickory-proto, reqwest, serde_json, anyhow — already in Cargo.lock; lock entry hand-added, verified by `--locked`), `test/build.sh`, `test/Containerfile` (scratch), `test/README.md` with metadata
+- [x] short: SOA at the apex, Service A over UDP+TCP, SRV, NXDOMAIN+SOA, delete → NXDOMAIN
+- [x] medium: headless A/SRV/hostnames, PTR, ExternalName, pods, dns-version, endpoint change, UDP truncation vs TCP/EDNS, FORMERR, forward path, case, concurrency
+- [x] long: waves of Services ramped until the cluster pushes back; programming latency, query p50/p99, drain residue, probe slowdown vs wave 1
+- [x] sc-build `cargo build --locked --workspace && cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh` green (491a7af; 3.4 MB static binary)
+- [ ] **Blocked:** first real run. Run 7b6ff9a91b (2026-09-27, 2c16a9b) on C2NR0Q2, the only test machine: its apiserver did not answer /readyz in 10 min (last install 11.48 failed). After that, stormcentral#56 (the runner's `@@RESULT` quoting) fails every run that pushes a new image. When both are fixed: `stormcentral test run stormcoredns short|medium --tag C2NR0Q2`, fix what it finds, then close #5.
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

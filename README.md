@@ -55,9 +55,12 @@ handled by the Corefile parser.
 The kubernetes plugin has run in a real cluster. On stormcos 11.03
 (2026-09-21), under `80-coredns.yaml` against rustkube, it answered
 `kubernetes.default.svc.cluster.local` → `10.96.0.1` (stormcos CHANGELOG).
-This repo has no automated end-to-end test of it yet (#5). The unit tests (`cargo test`, 54 of them) cover
-the parser, registry order, rewrite, cache, template, the zone engine,
-kubernetes name parsing, and other areas.
+The unit tests (`cargo test`, 54 of them) cover the parser, registry order,
+rewrite, cache, template, the zone engine, kubernetes name parsing, and other
+areas. The deployed server is tested from a pod by the test container in
+`test/` ([test/README.md](test/README.md)), with short, medium and long
+suites per the stormcos test standard (#5). It builds, but it has not yet
+run on a test machine.
 
 ## Configuration
 
@@ -154,7 +157,13 @@ In the stormcentral workflow nothing is built locally. Push, then run:
 ```bash
 sc-build                          # cargo build && cargo test on the build box
 sc-build 'cargo test -p stormcoredns cache'
+sc-build 'cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh'   # plus the test container
+stormcentral test run stormcoredns short --tag <machine> --url http://stormcentral.g8.lo
 ```
+
+The root package is the workspace's default member, so `cargo build` builds
+only the server, as the golden build does. `test/` (`stormcoredns-test`) is
+built by `test/build.sh`.
 
 `sc-build` fetches the pushed commit onto `dev.g8.lo` as the unprivileged
 build user, builds it in a scratch directory, and deletes that directory. A
@@ -220,6 +229,7 @@ src/metrics.rs      global registry and core coredns_* collectors
 proto/dns.proto     the CoreDNS gRPC service
 docs/               architecture, plugin API, per-plugin status, stormcos integration, presentation.md (Marp deck)
 examples/           Corefiles (kubernetes, authoritative, smoke) and a zone file
+test/               the test container: /test short|medium|long against the cluster DNS (test/README.md)
 deploy/kubernetes/  upstream-style manifest for non-stormcos clusters
 ```
 

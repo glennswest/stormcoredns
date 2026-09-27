@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (#5 run attempt)
+- **docs:** Work plan: #5's first in-cluster run (54b2f2032b) now gets past the apiserver wait and stormcentral#56, and stops at C2NR0Q2's sbregistry refusing :5100; filed stormcentral#71.
+
 ### 2026-09-27 (docs refresh)
 - **docs:** Docs re-checked against the code and history since 2026-09-18. The server code is unchanged since the #3 rewrite. The stormcos coredns path (`80-coredns.yaml`, `build-goldens.sh`, golden `golden-coredns-0f272e81c6e0`) and stormcentral's test runner match what is documented. Fixed: `test/README.md` said a node without cluster DNS fails "at apex-soa" (only the short suite has it) and that `forward-answers` sends one query (it retransmits once); the README now counts the test crate's unit tests; CLAUDE.md's layout lists `test/`. Nothing new the docs promise that the code does not do; the open gaps remain #6–#16.
 

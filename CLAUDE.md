@@ -117,7 +117,7 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] medium: headless A/SRV/hostnames, PTR, ExternalName, pods, dns-version, endpoint change, UDP truncation vs TCP/EDNS, FORMERR, forward path, case, concurrency
 - [x] long: waves of Services ramped until the cluster pushes back; programming latency, query p50/p99, drain residue, probe slowdown vs wave 1
 - [x] sc-build `cargo build --locked --workspace && cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh` green (491a7af; 3.4 MB static binary)
-- [ ] **Blocked:** first real run. Run 7b6ff9a91b (2026-09-27, 2c16a9b) on C2NR0Q2, the only test machine: its apiserver did not answer /readyz in 10 min (last install 11.48 failed). After that, stormcentral#56 (the runner's `@@RESULT` quoting) fails every run that pushes a new image. When both are fixed: `stormcentral test run stormcoredns short|medium --tag C2NR0Q2`, fix what it finds, then close #5.
+- [ ] **Blocked:** first real run. stormcentral#56 is fixed (20a570b) and C2NR0Q2's apiserver now answers, but run 54b2f2032b (2026-09-27, 4695f5d) stopped at the image step: C2NR0Q2's sbregistry refuses connections on :5100 (same for every component's run) — filed stormcentral#71. When it is fixed: `stormcentral test run stormcoredns short|medium --tag C2NR0Q2 --url http://stormcentral.g8.lo`, fix what it finds, then close #5.
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

@@ -2226,6 +2226,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "stormcoredns-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hickory-proto",
+ "reqwest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

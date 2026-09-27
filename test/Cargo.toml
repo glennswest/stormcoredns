@@ -1,0 +1,23 @@
+[package]
+name = "stormcoredns-test"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "stormcoredns's test container: short, medium and long suites against the cluster DNS of a running node, per stormcentral docs/test-standard.md (#5)."
+publish = false
+
+# A workspace member, so the one Cargo.lock pins it. `cargo build` at the repo
+# root (the golden's build) still builds only stormcoredns; this needs
+# `--workspace` or `-p stormcoredns-test`. The server is never linked in: it is
+# reached over the network, as the pods of a cluster reach it.
+[[bin]]
+name = "stormcoredns-test"
+path = "src/main.rs"
+
+# Only crates stormcoredns itself already uses, at the versions it pins.
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+hickory-proto = { version = "0.24", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde_json = "1"
+anyhow = "1"

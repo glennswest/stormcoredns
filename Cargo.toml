@@ -7,6 +7,12 @@ description = "A Rust reimplementation of CoreDNS: Corefile-configured, plugin-c
 repository = "https://github.com/glennswest/stormcoredns"
 default-run = "stormcoredns"
 
+# test/ is the test container (#5). `cargo build` here still builds only
+# stormcoredns (the root package is the default member); the test crate is
+# built by test/build.sh, and `cargo test --workspace` runs its unit tests.
+[workspace]
+members = [".", "test"]
+
 [[bin]]
 name = "stormcoredns"
 path = "src/main.rs"

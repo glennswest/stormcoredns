@@ -1,0 +1,16 @@
+# stormcoredns-test — stormcoredns's test image, per stormcentral
+# docs/test-standard.md (#5). One image for all three suites: the Job runs
+# `/test short|medium|long`.
+#
+# test/build.sh builds the static (musl) binary on the build box and stages
+# it in test/.stage/; this packages it. It needs nothing under it: it talks
+# DNS to the cluster DNS server named in the pod's resolv.conf and HTTPS to
+# the apiserver, verified with the ServiceAccount's mounted ca.crt, so the
+# image is scratch.
+#
+# The build context is the repo root (the standard's).
+FROM scratch
+ARG COMMIT=unknown
+LABEL storm.io/test-of="stormcoredns" storm.io/test-commit="${COMMIT}"
+COPY test/.stage/stormcoredns-test /test
+ENTRYPOINT ["/test"]

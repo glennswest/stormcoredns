@@ -35,3 +35,6 @@ K*.private
 out/
 docs/presentation.html
 docs/presentation.pdf
+
+# test/build.sh stages the test binary here
+test/.stage/

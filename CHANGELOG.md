@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-28 (issue validation)
+- **docs:** Work plan: #5 is still blocked. C2NR0Q2's registry connects now, but image pushes fail (stormblock-registry#56, fixed in v0.24.1 but not yet deployed). #2, #3 and #4 are still closed, and their evidence still holds.
+
 ### 2026-09-27 (docs refresh, third pass)
 - **docs:** Re-checked against the code and history since 2026-09-18. There have been no code changes since 06ff80c. The golden (`STORMCOREDNS_SRC` in stormcentral `src/goldens.rs`, stormcos#107), `80-coredns.yaml` and `build-goldens.sh` are unchanged. New since the last pass: stormcos 198d8a2 (#64) makes the node's ironprom scrape `10.96.0.10:9153`, but the `kube-dns` Service declares no 9153 port. `docs/integration.md` now says who scrapes `/metrics` and that `:9153` binds every address; filed stormcos#152 for the missing Service port. There are no new stormcoredns gaps beyond #6–#16.
 

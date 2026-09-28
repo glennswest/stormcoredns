@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-27 (docs refresh, third pass)
+- **docs:** Re-checked against the code and history since 2026-09-18. There have been no code changes since 06ff80c. The golden (`STORMCOREDNS_SRC` in stormcentral `src/goldens.rs`, stormcos#107), `80-coredns.yaml` and `build-goldens.sh` are unchanged. New since the last pass: stormcos 198d8a2 (#64) makes the node's ironprom scrape `10.96.0.10:9153`, but the `kube-dns` Service declares no 9153 port. `docs/integration.md` now says who scrapes `/metrics` and that `:9153` binds every address; filed stormcos#152 for the missing Service port. There are no new stormcoredns gaps beyond #6–#16.
+
 ### 2026-09-27 (docs refresh, second pass)
 - **docs:** Re-checked README, docs/, test/README.md and CLAUDE.md against the code and history since 2026-09-18. No code has changed since the morning refresh (06ff80c); only docs have. External facts re-verified: stormcentral `src/goldens.rs` still stages `coredns` from `STORMCOREDNS_SRC` (a stage-only golden, so it is absent from `stormcentral component list`); stormcos `build-goldens.sh` still builds the musl binary, stages `/stormcoredns` + `/coredns` as a 32M golden, with no upstream fallback; the latest golden is still `golden-coredns-0f272e81c6e0` (stormcos#107, open); `80-coredns.yaml`'s stale fallback comment is still stormcos#79. Nothing the docs promise that the code does not do beyond #6–#16, so no new issues.
 

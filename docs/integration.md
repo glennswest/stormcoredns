@@ -4,7 +4,7 @@ How stormcoredns becomes the cluster DNS on a stormcos node, and what it
 needs from the node and the API server. Everything here was checked against
 this repo's code, and against stormcos (`deploy/build-goldens.sh`,
 `deploy/manifests/80-coredns.yaml`, `deploy/image.toml`) and stormcentral
-(`src/goldens.rs`) as of 2026-09-26.
+(`src/goldens.rs`) as of 2026-09-27.
 
 ## Delivery: the `coredns` golden
 
@@ -54,6 +54,12 @@ authoritative for the site zones and owns DHCP and IPAM.
 | 8080 | `/health` (`health`) | 200 `OK`. During lameduck it returns 503 while DNS keeps answering |
 | 8181 | `/ready` (`ready`) | 200 once the kubernetes watches have synced, otherwise 503 with the plugin name |
 | 9153 | `/metrics` (`prometheus :9153`) | `coredns_*` names and labels, no `process_*` metrics. A bare `prometheus` binds `localhost:9153` |
+
+`prometheus :9153` listens on every address, so the pod IP serves
+`/metrics`. The node's ironprom (stormcos `deploy/metrics/ironprom-node.yml`)
+scrapes it at `10.96.0.10:9153`, but the `kube-dns` Service declares only
+port 53, so that target has no backend until stormcos#152 adds a
+`metrics` 9153 port.
 
 It needs `NET_BIND_SERVICE` for port 53. It writes nothing to disk (`reload`
 only reads the Corefile), so a read-only root works.

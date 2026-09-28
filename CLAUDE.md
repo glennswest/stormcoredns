@@ -119,6 +119,9 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] sc-build `cargo build --locked --workspace && cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh` green (491a7af; 3.4 MB static binary)
 - [ ] **Blocked:** first real run. stormcentral#56 is fixed (20a570b) and C2NR0Q2's apiserver now answers, but run 54b2f2032b (2026-09-27, 4695f5d) stopped at the image step: C2NR0Q2's sbregistry refuses connections on :5100 (same for every component's run) — filed stormcentral#71 (runner side; node side is stormcos#135). Also filed stormcentral#83 (Decide: more test machines). Still refused at 2026-09-27 validation. When it is fixed: `stormcentral test run stormcoredns short|medium --tag C2NR0Q2 --url http://stormcentral.g8.lo`, fix what it finds, then close #5.
 
+### Done — docs refresh, third pass (2026-09-27)
+- [x] No code changes since 06ff80c; integration.md now notes the ironprom scrape of `10.96.0.10:9153` and the missing Service port (filed stormcos#152)
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck

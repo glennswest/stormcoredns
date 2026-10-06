@@ -133,12 +133,13 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] Ignored options documented per plugin in docs/plugins.md (`upstream`/`stubzones` ignored as in CoreDNS); `pprof block` and trace exporter options warn
 - [x] sc-build green at 2ab4c86: no warnings, 59+6 tests, live SIGHUP reload + SIGTERM exit on dev. Live scripts: the binary is `${CARGO_TARGET_DIR:-target}/debug/stormcoredns` (CARGO_TARGET_DIR is set on dev — that is what #19 tripped on)
 
-### In progress — #13 file: wildcards, reload, DNAME, NSEC3 (2026-10-06)
-- [ ] Wildcards per RFC 4592: synthesize only from `*.<closest encloser>` (existing names and empty non-terminals precomputed at load); NSEC proofs use the closest encloser
-- [ ] `reload` per `file` stanza (was one value for the whole block)
-- [ ] DNAME (RFC 6672): hickory 0.24 cannot parse it, so the zone text's DNAME type token is rewritten to ANAME before parsing and turned into type 39 at load; DNAME + synthesized CNAME, YXDOMAIN when too long; AXFR/secondary carry it as type 39
-- [ ] NSEC3 negative proofs (RFC 5155 7.2) for pre-signed zones: NXDOMAIN, NODATA, wildcard, referral
-- [ ] Unit tests, docs/plugins.md, CHANGELOG; sc-build; stage `coredns`
+### Done — #13 file: wildcards, reload, DNAME, NSEC3 (2026-10-06)
+- [x] Wildcards per RFC 4592: only `*.<closest encloser>` synthesizes (names + empty non-terminals precomputed in `Zone.nodes`); NSEC proofs use the closest encloser
+- [x] `reload` per `file` stanza
+- [x] DNAME (RFC 6672): the zone text's DNAME type token is parsed as ANAME (`dname_as_aname`) and stored as type 39; DNAME + synthesized CNAME, YXDOMAIN when too long; a real ANAME is refused
+- [x] NSEC3 denial proofs (RFC 5155 7.2): NXDOMAIN, NODATA/opt-out, wildcard answer/NODATA, referral
+- [x] sc-build green at c35d48d (68+6 tests, no warnings) + live check on dev (closest-encloser NXDOMAIN, DNAME chain, YXDOMAIN, per-stanza reload); `coredns` golden staged
+- [x] Found: hickory 0.24's zone parser refuses RRSIG/NSEC/NSEC3/DNSKEY, so signed zone files (and `sign`'s output) don't load in `file` — filed #20
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
@@ -150,3 +151,4 @@ Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #12 view metadata()
 - [ ] #15 CoreDNS divergences (verify each against 1.12 first)
+- [ ] #20 signed zone files do not load (hickory parser)

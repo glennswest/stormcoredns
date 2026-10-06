@@ -122,16 +122,16 @@ Endpoints and EndpointSlices it creates in its own namespace.
 ### Done — docs refresh, third pass (2026-09-27)
 - [x] No code changes since 06ff80c; integration.md now notes the ironprom scrape of `10.96.0.10:9153` and the missing Service port (filed stormcos#152)
 
-### In progress — #18 loop false positive (P0, stormcos#261, 2026-10-06)
-- [ ] Each startup probe attempt gets its own qname; a loop is one qname arriving more than twice (CoreDNS's threshold), so retries after a slow/unreachable upstream never count. Also closes #9.
-- [ ] Unit tests; sc-build green; stage the `coredns` golden
+### Done — #18 loop false positive (P0, stormcos#261, 2026-10-06)
+- [x] Each startup probe attempt gets its own qname; a loop is one qname arriving more than twice (CoreDNS's threshold), so retries after a slow/unreachable upstream never count. Also closes #9.
+- [x] 3 unit tests; sc-build green at 219c6ad, with live checks on dev: `forward . 192.0.2.1` stays up (3 unanswered probes, warnings only), `forward` to itself still exits 1 on the loop
+- [x] `coredns` golden staged
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #8 `:port` listeners IPv4-only after a reload
-- [ ] #9 `loop` false positive → exit(1) when upstream > 2 s
 - [ ] #14 kubernetes NXDOMAIN before sync; discovery/readiness edge cases
 - [ ] #10 dnssec bogus NXDOMAIN NSEC, RRSIG cache expiry
 - [ ] #11 secondary expire/retry/serial; task leaks on reload

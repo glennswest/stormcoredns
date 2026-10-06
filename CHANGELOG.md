@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### 2026-10-06 (#18)
-- **fix:** `loop` no longer exits when the upstream is slow or unreachable (stormcos#261). The startup probe was retried with the same name after a 2 s timeout, and the second arrival counted as a loop. Each attempt now has its own random name, and a loop is one name arriving more than twice (CoreDNS's threshold, also #9). A probe with no answer is logged as a warning, never fatal.
+- **fix:** `loop` no longer exits when the upstream is slow or unreachable (stormcos#261). The startup probe was retried with the same name after a 2 s timeout, and the second arrival counted as a loop. Each attempt now has its own random name, and a loop is one name arriving more than twice (CoreDNS's threshold, also #9). A probe with no answer is logged as a warning, never fatal. Verified with sc-build at 219c6ad: unit tests pass, a server forwarding to an unreachable upstream stays up, and a server forwarding to itself still exits on the loop.
 
 ### 2026-09-28 (issue validation)
 - **docs:** Work plan: #5 is still blocked. C2NR0Q2's registry connects now, but image pushes fail (stormblock-registry#56, fixed in v0.24.1 but not yet deployed). #2, #3 and #4 are still closed, and their evidence still holds.

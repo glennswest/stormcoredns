@@ -49,10 +49,15 @@ adds:
 * `c.key`, `c.server_block_keys`, `c.zone()`, `c.is_first_key()`,
   `c.plugin_err(...)`.
 * `c.add_plugin(handler)` — append to the chain (order is fixed by the registry).
-* `c.on_startup(hook)`, `c.on_shutdown(hook)`, `c.on_restart_failed(hook)`
-  — `config::Hook = Box<dyn FnOnce() -> BoxFuture<'static, Result<()>> + Send + Sync>`.
-  A failing startup hook aborts the start (or the reload). No plugin uses
-  `on_restart_failed` yet; `on_restart` exists but is never run (#16).
+* `c.on_startup(hook)`, `c.on_shutdown(hook)` —
+  `config::Hook = Box<dyn FnOnce() -> BoxFuture<'static, Result<()>> + Send + Sync>`.
+  A failing startup hook aborts the start (or the reload).
+* `c.on_restart(hook)`, `c.on_restart_failed(hook)` —
+  `config::RestartHook = Arc<dyn Fn() -> BoxFuture<'static, Result<()>> + Send + Sync>`,
+  run on every reload attempt of the instance that registered them.
+  `on_restart` hooks run before the new instance is built; an error aborts
+  that reload and keeps the running instance. `on_restart_failed` hooks
+  run when a reload fails. No plugin registers either yet.
 * `c.once_per_server_block(|c| ...)` — run once even when the block has
   several keys.
 * `c.server_block_zones()`, `c.origins_from_args_or_server_block(args)`.
@@ -83,8 +88,12 @@ impl Handler for MyPlugin {
 
 Optional hooks with defaults: `ready()` (readiness for `ready`),
 `autopath(req)`, `transfer(zone)` (records for AXFR), `external_addrs(ns,
-svc)`, `external_reverse(ip)`, `metadata(req)`. `health()` exists but
-nothing calls it (#16).
+svc)`, `external_reverse(ip)`, `metadata(req)`.
+
+The `cancel` deadline is `req.deadline` (`req.is_cancelled()` once it has
+passed). The chain already runs under `cancel`'s timeout; a plugin that
+waits on the network should also stop retrying once it passes, as
+`forward` does.
 
 To see or change the response of the plugins after you:
 

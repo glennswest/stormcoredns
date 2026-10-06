@@ -209,8 +209,8 @@ These are the gaps against CoreDNS, each tracked in an issue:
 - `kubernetes multicluster` is rejected as not supported.
 - #15 lists the behaviour and defaults that differ from CoreDNS: `bufsize`
   defaults to 512, `cache` does not cache SERVFAIL by default, the
-  `clouddns` argument order differs, and `debug` does nothing. #16 lists
-  options that are accepted and ignored.
+  `clouddns` argument order differs, and `debug` does nothing. Options that are
+  accepted and ignored are listed per plugin in docs/plugins.md.
 - Open bugs: #6 (`/health` stuck at 503 after a reload), #7 (automatic
   reload stops after one failed reload), #8 (IPv4-only listener after a
   reload), #9 (`loop` false positive), #11 (`secondary` timers), #12

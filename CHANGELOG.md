@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 2026-10-06 (#16)
+- **fix:** `on_restart` hooks now run before every reload (an error aborts that reload and keeps the running instance), and `on_restart_failed` hooks run on every failed reload, not just the first. Both are now `RestartHook`s (`Arc<dyn Fn>`).
+- **fix:** `Instance::stop` waits up to the servers' `graceful_timeout` overall, instead of a hardcoded 5 s per listener task.
+- **fix:** `forward` honours the `cancel` deadline (`req.deadline`). It stops trying upstreams once the deadline passes, and its 5 s overall budget now bounds each upstream exchange too.
+- **refactor:** Removed dead code: `Handler::health()`, `BuildOptions.quiet`, `ServerConfig.{debug,stacktrace,metadata}`, `Server.debug`, `ParsedKey.ipv4_only`, and `file::zone::{quick_serial,unused_bail}`.
+- **chore:** `pprof { block }` and the `trace` exporter options log a warning that they are ignored.
+- **docs:** plugin-api.md, architecture.md, plugins.md and README now describe the restart hooks, the grace time, and which options are ignored (`upstream`/`stubzones` are ignored in CoreDNS too).
+
 ### 2026-10-06 (#18)
 - **fix:** `loop` no longer exits when the upstream is slow or unreachable (stormcos#261). The startup probe was retried with the same name after a 2 s timeout, and the second arrival counted as a loop. Each attempt now has its own random name, and a loop is one name arriving more than twice (CoreDNS's threshold, also #9). A probe with no answer is logged as a warning, never fatal. Verified with sc-build at 219c6ad: unit tests pass, a server forwarding to an unreachable upstream stays up, and a server forwarding to itself still exits on the loop.
 

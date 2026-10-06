@@ -55,8 +55,7 @@ gRPC send only the first). Errors are `PluginError{plugin, rcode, source}`;
 
 Cross-plugin contracts that CoreDNS expresses as Go interfaces are default
 methods on `Handler`: `ready()`, `autopath()`, `transfer()`,
-`external_addrs()`, `external_reverse()`, `metadata()` (and `health()`,
-which nothing calls). Because a plugin's `setup` runs before later plugins
+`external_addrs()`, `external_reverse()`, `metadata()`. Because a plugin's `setup` runs before later plugins
 exist, `plugins::wire::register` defers the lookup of a sibling handler
 until every config's chain is finalised (`plugins::post_finalize`, before
 the listeners bind) — CoreDNS's `c.OnStartup` +
@@ -108,11 +107,14 @@ for external CNAME targets (`file`, `kubernetes`, `etcd`), `dns64`, and
 binds every listener, runs startup hooks (a failing hook aborts the start),
 then serves. `Instance::stop` runs shutdown hooks first (so `health`'s
 lameduck keeps answering DNS while `/health` reports 503), then cancels
-listeners, waiting up to 5 s per task. `reload` hashes the Corefile
+listeners, waiting up to the servers' `graceful_timeout` (5 s, CoreDNS's
+fixed grace time) for them all. `reload` hashes the Corefile
 (SHA-256) and, on change, signals the main loop; SIGHUP and SIGUSR1 do the
-same. The main loop starts a new instance and stops the old one; a failed
-reload keeps the old instance, increments `coredns_reload_failed_total` and
-runs `restart_failed` hooks (none are registered today). Open bugs in this
+same. The main loop runs the old instance's `restart` hooks (an error aborts the
+reload), starts a new instance and stops the old one; a failed reload keeps
+the old instance, increments `coredns_reload_failed_total` and runs its
+`restart_failed` hooks. Both kinds run on every attempt (no plugin
+registers one today). Open bugs in this
 path: #6 (lameduck on reload leaves `/health` at 503), #7 (the watcher does
 not re-arm after a failed reload).
 

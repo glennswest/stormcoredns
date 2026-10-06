@@ -17,7 +17,7 @@ the options that are accepted but ignored.
 | root | full | `root PATH`, once per block. A missing directory only warns. The default is the Corefile's directory |
 | metadata | full | Providers are plugins that implement `Handler::metadata`. Only `geoip` does today, so there are no `kubernetes/*` labels |
 | geoip | full | MaxMind City/Country databases (no ASN) and `edns-subnet`. Labels: `geoip/city/name`, `geoip/country/{code,name,is_in_european_union}`, `geoip/continent/{code,name}`, `geoip/latitude`, `geoip/longitude`, `geoip/timezone`, `geoip/postalcode` |
-| cancel | full | Default 5001 ms. The chain runs under a timeout, and on expiry the query gets SERVFAIL |
+| cancel | full | Default 5001 ms. The chain runs under a timeout, and on expiry the query gets SERVFAIL. The deadline is also `req.deadline`: `forward` stops trying upstreams once it passes |
 | tls | differs | `tls CERT KEY [CA] { client_auth … }`. Because of rustls, `request` behaves as `verify_if_given` and `require` as `require_and_verify`, and every mode except `nocert` needs a CA. Serves tls://, https://, quic:// and grpc:// |
 | timeouts | partial | `read`/`write`/`idle` (1s–24h). Defaults are 2s/2s/10s. They apply to TCP, DoT and DoQ; **DoH and gRPC ignore them** |
 | multisocket | full | Default is the CPU count, with no upper bound. SO_REUSEPORT is set on every socket either way |
@@ -25,11 +25,11 @@ the options that are accepted but ignored.
 | nsid | full | Default is the hostname |
 | bufsize | differs | 512–4096; **default 512** (CoreDNS uses 1232) |
 | bind | full | Addresses and interface names (getifaddrs), plus `except`. An interface also yields its IPv6 link-local addresses, which have no scope ID |
-| debug | partial | Accepted and ignored. Panic recovery is always on (a panic returns SERVFAIL and increments `coredns_panics_total`) |
-| trace | partial | Spans go to the `tracing` subscriber. There is no Zipkin or Datadog exporter: the endpoint and type are only logged, and the batch/backlog options are ignored |
+| debug | partial | Accepted and ignored: it does not turn panic recovery off or change log levels (use `STORMCOREDNS_LOG`). Panic recovery is always on (a panic returns SERVFAIL and increments `coredns_panics_total`) |
+| trace | partial | Spans go to the `tracing` subscriber. There is no Zipkin or Datadog exporter: the endpoint and type are logged as unused, and the batch/backlog/analytics options are ignored with a warning |
 | ready | full | Default `:8181`, `GET /ready`. Readiness is re-checked on every request. Plugins that report it: kubernetes, route53, azure, clouddns |
 | health | full | Default `:8080`, `/health`, `lameduck` defaults to 0. It probes itself every second to feed `coredns_health_*`. Bug: #6 |
-| pprof | partial | Default `localhost:6053`. `/debug/pprof/` serves process statistics (stats, heap, allocs, threads) as text, not Go profiles; other profiles return 501. `block` is ignored |
+| pprof | partial | Default `localhost:6053`. `/debug/pprof/` serves process statistics (stats, heap, allocs, threads) as text, not Go profiles; other profiles return 501. `block` is ignored with a warning |
 | prometheus | full | Default `localhost:9153`, `/metrics`. See [Metrics](#metrics). There are no `process_*` metrics |
 | errors | full | `stdout`, `stacktrace`, `consolidate DUR REGEXP [level]`. `stacktrace` records the errors plugin's own stack, not the origin of the error |
 | log | full | `common`, `combined`, custom formats with `{…}`, `class`, and `{/label}` metadata. Written with `println!` |
@@ -50,12 +50,12 @@ the options that are accepted but ignored.
 | template | differs | `.Name .Question.Name .Zone .Class .Type .Remote .Message.Id`, `index .Match N`, `.Group.x`, `.Meta "l"`; no functions or pipelines. On a regex miss, the query goes to the next plugin even without `fallthrough`. `ederror` and `upstream` are ignored. Default TTL 3600 |
 | transfer | full | `to IP[:port]\|*`. AXFR out is split into ~60 KB messages over TCP/DoT (DoH, DoQ and gRPC send only the first message). IXFR returns SOA-only when the serials are equal, otherwise a full transfer. NOTIFY to each `to` IP is a single UDP packet with no retry |
 | hosts | differs | Default `/etc/hosts`, TTL 3600, reload 5s (mtime); inline entries, `no_reverse`, `fallthrough`. An unknown name gets NXDOMAIN without an SOA. `fallthrough` also applies when the name exists with a different type |
-| file | partial | `reload` default 60s: the file is polled by mtime and reloaded when the serial changes, and NOTIFY is sent. Wildcards, CNAME chase (external targets resolved through the server itself, max 8 hops), delegations with glue, empty non-terminals, and NSEC/RRSIG/DS passthrough for signed zones. **No DNAME, no NSEC3 proofs.** Bugs: #13 |
-| auto | full | `directory DIR [REGEXP TEMPLATE]` (default `db\.(.*)` → `{1}`), `reload` 60s. Every file is re-parsed on every tick |
-| secondary | partial | `transfer from IP…`. AXFR in over TCP (no IXFR, no TSIG) and SOA polling. NOTIFY is accepted from primaries only. Queries get SERVFAIL until the first transfer. **SOA expire is ignored**; see #11 |
-| etcd | differs | SkyDNS layout (default path `/skydns`, endpoint `http://localhost:2379`): A/AAAA/CNAME/SRV/TXT/MX/PTR/NS/SOA, wildcards, `credentials`, `tls`, `fallthrough`. `upstream`/`stubzones` are ignored. Default TTL 30 |
+| file | partial | `reload` default 60s: the file is polled by mtime and reloaded when the serial changes, and NOTIFY is sent. Wildcards, CNAME chase (external targets resolved through the server itself, max 8 hops), delegations with glue, empty non-terminals, and NSEC/RRSIG/DS passthrough for signed zones. **No DNAME, no NSEC3 proofs.** `upstream` is accepted and ignored, as in CoreDNS. Bugs: #13 |
+| auto | full | `directory DIR [REGEXP TEMPLATE]` (default `db\.(.*)` → `{1}`), `reload` 60s. Every file is re-parsed on every tick. `upstream` is accepted and ignored, as in CoreDNS |
+| secondary | partial | `transfer from IP…`. AXFR in over TCP (no IXFR, no TSIG) and SOA polling. NOTIFY is accepted from primaries only. Queries get SERVFAIL until the first transfer. **SOA expire is ignored**; see #11. `upstream` is accepted and ignored, as in CoreDNS |
+| etcd | differs | SkyDNS layout (default path `/skydns`, endpoint `http://localhost:2379`): A/AAAA/CNAME/SRV/TXT/MX/PTR/NS/SOA, wildcards, `credentials`, `tls`, `fallthrough`. `upstream`/`stubzones` are ignored, as in CoreDNS. Default TTL 30 |
 | loop | full | A UDP probe to the first bind address, for the first zone, active for about 30 s after startup. Up to 3 attempts (2 s each), each with its own random name, so a slow or unreachable upstream is never taken for a loop; a loop is one probe name arriving more than twice, as in CoreDNS (#18, #9) |
-| forward | full | `dns://` and `tls://` IP upstreams (at most 15 unless `sequential`). Policy `random` by default, also `round_robin`/`sequential`. `max_fails` 2, `expire` 10s, `health_check` 500ms (runs only after a failure), plus `except`, `force_tcp`, `prefer_udp`, `tls`, `tls_servername`, `max_concurrent` (over the limit → REFUSED), `next`, `failover`. There is a TCP/TLS connection pool (64 per upstream), and UDP opens a new socket per query. Timeouts: 5s each for dial, read and overall. `next` behaves like `failover` (#15) |
+| forward | full | `dns://` and `tls://` IP upstreams (at most 15 unless `sequential`). Policy `random` by default, also `round_robin`/`sequential`. `max_fails` 2, `expire` 10s, `health_check` 500ms (runs only after a failure), plus `except`, `force_tcp`, `prefer_udp`, `tls`, `tls_servername`, `max_concurrent` (over the limit → REFUSED), `next`, `failover`. There is a TCP/TLS connection pool (64 per upstream), and UDP opens a new socket per query. Timeouts: 5s each for dial and read, and 5s overall (or less, at the `cancel` deadline), which also bounds each upstream exchange. `next` behaves like `failover` (#15) |
 | grpc | full | tonic client, `tls`, `tls_servername`, `policy`, `except`; 5s timeout; no health checks |
 | erratic | full | `drop`, `truncate` and `delay` (default every 2nd query, 100 ms), `large`. AXFR gets AAAA records |
 | whoami | differs | A/AAAA plus SRV. The SRV owner is `_<port>._<proto>.<qname>` with the qname as target; CoreDNS uses `_<proto>.<qname>` with target `.` |

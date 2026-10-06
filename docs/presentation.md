@@ -240,8 +240,9 @@ upstream fallback**: if stormcoredns does not build, the release has no
 | **partial** | `dnstap`: client messages only · `local`: some zones missing · `timeouts`: not on DoH or gRPC · `tsig`: AXFR unsigned · `view metadata()`: always empty · `file`: no DNAME |
 | **differs** | `bufsize` default 512 (CoreDNS 1232) · `cache` does not cache SERVFAIL (CoreDNS 5 s) · `clouddns` argument order · `acl` does not fall through to the next rule |
 
-All of these are tracked in #15 and #16, which also mark the upstream
-comparisons that need checking against 1.12.
+The differences are tracked in #15, which also marks the upstream
+comparisons that need checking against 1.12; options that are accepted and
+ignored are listed per plugin in docs/plugins.md.
 
 ---
 
@@ -274,4 +275,4 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 | #14 | NXDOMAIN (not SERVFAIL) before the watches sync |
 
 Also open: #10 dnssec, #11 secondary, #12 view, #13 file wildcards, #15
-CoreDNS differences, #16 dead options, #5 tests.
+CoreDNS differences, #5 tests.

@@ -122,6 +122,10 @@ Endpoints and EndpointSlices it creates in its own namespace.
 ### Done — docs refresh, third pass (2026-09-27)
 - [x] No code changes since 06ff80c; integration.md now notes the ironprom scrape of `10.96.0.10:9153` and the missing Service port (filed stormcos#152)
 
+### In progress — #18 loop false positive (P0, stormcos#261, 2026-10-06)
+- [ ] Each startup probe attempt gets its own qname; a loop is one qname arriving more than twice (CoreDNS's threshold), so retries after a slow/unreachable upstream never count. Also closes #9.
+- [ ] Unit tests; sc-build green; stage the `coredns` golden
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck

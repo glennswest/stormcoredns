@@ -127,6 +127,11 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] 3 unit tests; sc-build green at 219c6ad, with live checks on dev: `forward . 192.0.2.1` stays up (3 unanswered probes, warnings only), `forward` to itself still exits 1 on the loop
 - [x] `coredns` golden staged
 
+### In progress — #16 dead hooks and unused fields (2026-10-06)
+- [ ] Wire: `on_restart` (run before each reload) and `on_restart_failed` become repeatable `RestartHook`s kept by the instance; `Instance::stop` uses `Server.graceful_timeout`; `forward` caps its upstream timeout at the `cancel` deadline and stops trying upstreams once it passes
+- [ ] Remove: `Handler::health()`, `BuildOptions.quiet`, `ServerConfig.{debug,stacktrace,metadata}`, `Server.debug`, `ParsedKey.ipv4_only`, `file::zone::{quick_serial,unused_bail}`
+- [ ] Ignored options stay documented (CoreDNS ignores `upstream`/`stubzones` too); `pprof block` and trace exporter options log a warning
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck

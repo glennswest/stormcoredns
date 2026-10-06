@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 2026-10-06 (#13)
+- **fix:** `file` wildcards follow RFC 4592: only `*.<closest encloser>` synthesizes an answer. Before, any `*.` ancestor did, so `x.b.c.example.org` got the apex wildcard even though `a.b.c.example.org` exists, where the answer should be NXDOMAIN. Existing names and empty non-terminals are computed once at load. NSEC proofs for NXDOMAIN now name the closest encloser's wildcard instead of the parent's.
+- **fix:** `reload` in a `file` stanza applies to that stanza's zones only. Before, the last `reload` in the server block applied to every stanza.
+- **feat:** DNAME (RFC 6672) in `file`, `auto` and `secondary` zones. The answer is the DNAME plus a CNAME synthesized with the DNAME's TTL, then the chase continues. YXDOMAIN is returned when the new name would be longer than 255 octets. A DNAME occludes delegations below it. hickory 0.24 cannot parse DNAME, so the zone text's DNAME type field is parsed as ANAME and stored as type 39 (a real ANAME is refused, as in CoreDNS). AXFR carries DNAME as type 39.
+- **feat:** NSEC3 denial proofs (RFC 5155 7.2) for signed zones: NXDOMAIN, NODATA (including opt-out), wildcard answers, wildcard NODATA and referrals without DS. The parameters come from the apex NSEC3PARAM.
+- **docs:** plugins.md (file, auto, sign), README and the presentation. Filed #20: hickory's zone-file parser refuses RRSIG/NSEC/NSEC3/DNSKEY, so signed zone *files* (including `sign`'s output) do not load in `file`/`auto`.
+
 ### 2026-10-06 (#16)
 - **fix:** `on_restart` hooks now run before every reload (an error aborts that reload and keeps the running instance), and `on_restart_failed` hooks run on every failed reload, not just the first. Both are now `RestartHook`s (`Arc<dyn Fn>`).
 - **fix:** `Instance::stop` waits up to the servers' `graceful_timeout` overall, instead of a hardcoded 5 s per listener task.

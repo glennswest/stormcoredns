@@ -237,7 +237,7 @@ upstream fallback**: if stormcoredns does not build, the release has no
 | | |
 |---|---|
 | **missing** | `dnssec`/`sign`: no RSA (ECDSA and Ed25519 only), no NSEC3, no CDS/CDNSKEY · `trace`: no exporter · `pprof`: process stats, not Go profiles · `debug`: does nothing · `kubernetes multicluster` |
-| **partial** | `dnstap`: client messages only · `local`: some zones missing · `timeouts`: not on DoH or gRPC · `tsig`: AXFR unsigned · `view metadata()`: always empty · `file`: no DNAME |
+| **partial** | `dnstap`: client messages only · `local`: some zones missing · `timeouts`: not on DoH or gRPC · `tsig`: AXFR unsigned · `view metadata()`: always empty · `file`: signed zone files do not load (#20) |
 | **differs** | `bufsize` default 512 (CoreDNS 1232) · `cache` does not cache SERVFAIL (CoreDNS 5 s) · `clouddns` argument order · `acl` does not fall through to the next rule |
 
 The differences are tracked in #15, which also marks the upstream
@@ -252,7 +252,7 @@ ignored are listed per plugin in docs/plugins.md.
   short/medium/long suites per the stormcos test standard, run as a Job on
   the test machines (#5).
 - **Planned:** fixes for the bugs on the next slide, cluster-DNS path first.
-- **Planned:** a `trace` exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`,
+- **Planned:** a `trace` exporter (OTLP/Zipkin), NSEC3 in `sign`,
   CDS/CDNSKEY in `sign`, and `kubernetes multicluster`.
 - **Planned elsewhere:** stormcentral#35 corrects the graph edges;
   stormcos#79 removes stale claims about an upstream CoreDNS fallback.
@@ -274,5 +274,5 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 | #8 | after a reload, `:53` listens on IPv4 only |
 | #14 | NXDOMAIN (not SERVFAIL) before the watches sync |
 
-Also open: #10 dnssec, #11 secondary, #12 view, #13 file wildcards, #15
-CoreDNS differences, #5 tests.
+Also open: #10 dnssec, #11 secondary, #12 view, #15
+CoreDNS differences, #20 signed zone files, #5 tests.

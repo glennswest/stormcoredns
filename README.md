@@ -204,6 +204,9 @@ These are the gaps against CoreDNS, each tracked in an issue:
 
 - `dnssec`/`sign`: ECDSA P-256/P-384 and Ed25519 only, no RSA (no OpenSSL
   linked). No NSEC3, no CDS/CDNSKEY. #10 covers the dnssec proof and cache bugs.
+- `file`/`auto` cannot load zone files that hold RRSIG, NSEC, NSEC3 or
+  DNSKEY records, so `sign`'s output cannot be served by `file` (#20). Signed
+  zones served through `secondary` get NSEC or NSEC3 denial proofs.
 - `trace` logs spans to the tracing subscriber and has no exporter. `pprof`
   serves process statistics rather than Go profiles.
 - `kubernetes multicluster` is rejected as not supported.
@@ -214,7 +217,7 @@ These are the gaps against CoreDNS, each tracked in an issue:
 - Open bugs: #6 (`/health` stuck at 503 after a reload), #7 (automatic
   reload stops after one failed reload), #8 (IPv4-only listener after a
   reload), #9 (`loop` false positive), #11 (`secondary` timers), #12
-  (`view metadata()`), #13 (`file` wildcards), #14 (readiness edge cases).
+  (`view metadata()`), #14 (readiness edge cases), #20 (signed zone files).
 
 ## Layout
 

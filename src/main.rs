@@ -129,7 +129,7 @@ async fn load(args: &Args) -> Result<Instance> {
     if blocks.is_empty() {
         bail!("{}: no server blocks", args.conf.display());
     }
-    let opts = BuildOptions { default_port: args.port, corefile: args.conf.clone(), quiet: args.quiet };
+    let opts = BuildOptions { default_port: args.port, corefile: args.conf.clone() };
     Instance::start(blocks, &opts).await
 }
 
@@ -177,10 +177,15 @@ async fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-/// Start a new instance from the Corefile; on failure keep the old one
-/// (running its `restart_failed` hooks).
+/// Run the old instance's `restart` hooks, then start a new instance from
+/// the Corefile; on failure keep the old one (running its `restart_failed`
+/// hooks).
 async fn reload(args: &Args, old: Instance) -> Instance {
-    match load(args).await {
+    let started = match old.run_restart_hooks().await {
+        Ok(()) => load(args).await,
+        Err(e) => Err(e.context("restart hook")),
+    };
+    match started {
         Ok(new) => {
             old.stop().await;
             tracing::info!("Reloading complete");
@@ -189,12 +194,7 @@ async fn reload(args: &Args, old: Instance) -> Instance {
         Err(e) => {
             tracing::error!("Restart failed: {}", e);
             metrics::RELOAD_FAILED.inc();
-            let mut old = old;
-            for h in old.restart_failed_hooks.drain(..) {
-                if let Err(e) = h().await {
-                    tracing::warn!("restart_failed hook: {}", e);
-                }
-            }
+            old.run_restart_failed_hooks().await;
             old
         }
     }

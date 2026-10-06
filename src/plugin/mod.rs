@@ -129,11 +129,6 @@ pub trait Handler: Send + Sync + 'static {
         None
     }
 
-    /// Health signal for the `health` plugin (CoreDNS `Healther`).
-    fn health(&self) -> Option<bool> {
-        None
-    }
-
     /// `autopath.AutoPather`: the search path to try for this client
     /// (e.g. `["ns.svc.cluster.local.", "svc.cluster.local.", "cluster.local.", ""]`).
     fn autopath(&self, _req: &Request) -> Option<Vec<String>> {

@@ -5,7 +5,7 @@
 
 use crate::dnsutil;
 use crate::plugin::Request;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use hickory_proto::op::{Message, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::txt::Parser;
@@ -449,17 +449,6 @@ fn rename(records: &mut [Record], owner: Option<&Name>) {
             r.set_name(o.clone());
         }
     }
-}
-
-/// Serial from a zone file's SOA without parsing the whole file (used
-/// by `file` reload checks); falls back to a full parse on failure.
-pub fn quick_serial(text: &str, origin: &str) -> Option<u32> {
-    Zone::parse(text, origin, None).ok().map(|z| z.serial)
-}
-
-#[allow(dead_code)]
-fn unused_bail() -> Result<()> {
-    bail!("unused")
 }
 
 #[cfg(test)]

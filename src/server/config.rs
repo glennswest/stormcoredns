@@ -56,9 +56,6 @@ pub struct ParsedKey {
     pub port: u16,
     /// True when the key carried an explicit port.
     pub explicit_port: bool,
-    /// Always false and never read (#16). An IP in a key is a zone (its
-    /// reverse /32), as in CoreDNS; bind addresses come from `bind`.
-    pub ipv4_only: bool,
 }
 
 pub fn parse_key(key: &str) -> Result<ParsedKey> {
@@ -85,10 +82,13 @@ pub fn parse_key(key: &str) -> Result<ParsedKey> {
     if zones.len() != 1 {
         bail!("server block key '{}' expands to {} zones; use a class-aligned reverse prefix", key, zones.len());
     }
-    Ok(ParsedKey { transport, zone: zones.into_iter().next().unwrap(), port, explicit_port: explicit, ipv4_only: false })
+    Ok(ParsedKey { transport, zone: zones.into_iter().next().unwrap(), port, explicit_port: explicit })
 }
 
 pub type Hook = Box<dyn FnOnce() -> BoxFuture<'static, Result<()>> + Send + Sync>;
+/// A hook that can run more than once: `on_restart` and `on_restart_failed`
+/// hooks run on every reload attempt of the instance that registered them.
+pub type RestartHook = Arc<dyn Fn() -> BoxFuture<'static, Result<()>> + Send + Sync>;
 pub type FilterFn = Arc<dyn Fn(&Request) -> bool + Send + Sync>;
 
 pub struct ServerConfig {
@@ -98,8 +98,6 @@ pub struct ServerConfig {
     pub transport: Transport,
     /// `bind` addresses; empty means all interfaces.
     pub listen_hosts: Vec<String>,
-    pub debug: bool,
-    pub stacktrace: bool,
     pub root: PathBuf,
     /// TLS config from the `tls` plugin (for tls://, https://, quic://, grpc://).
     pub tls: Option<Arc<rustls::ServerConfig>>,
@@ -118,10 +116,8 @@ pub struct ServerConfig {
     pub num_sockets: usize,
     pub startup: Vec<Hook>,
     pub shutdown: Vec<Hook>,
-    pub restart: Vec<Hook>,
-    pub restart_failed: Vec<Hook>,
-    /// The `metadata` plugin is enabled in this block.
-    pub metadata: bool,
+    pub restart: Vec<RestartHook>,
+    pub restart_failed: Vec<RestartHook>,
     /// Arbitrary per-config values plugins share at setup (e.g. `tls`
     /// client-auth mode, `pprof` address). Keyed by "plugin/key".
     pub values: HashMap<String, String>,
@@ -137,8 +133,6 @@ impl ServerConfig {
             port: key.port,
             transport: key.transport,
             listen_hosts: Vec::new(),
-            debug: false,
-            stacktrace: false,
             root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             tls: None,
             plugins: Vec::new(),
@@ -153,7 +147,6 @@ impl ServerConfig {
             shutdown: Vec::new(),
             restart: Vec::new(),
             restart_failed: Vec::new(),
-            metadata: false,
             values: HashMap::new(),
             key_index,
             block_index,

@@ -40,7 +40,6 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
         let args = c.remaining_args();
         let zones = c.origins_from_args_or_server_block(&args)?;
         let m = Arc::new(Metadata { zones, providers: ArcSwap::from_pointee(Vec::new()) });
-        c.config.metadata = true;
         c.add_plugin(m.clone());
         crate::plugins::wire::register(c, move |cfg| {
             let providers: Vec<Arc<dyn Handler>> = cfg.plugins.iter().filter(|(n, _)| *n != "metadata").map(|(_, h)| h.clone()).collect();

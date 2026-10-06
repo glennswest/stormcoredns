@@ -400,11 +400,13 @@ impl ForwardHandler {
         let mut last_err: Option<anyhow::Error> = None;
         let mut fails = 0;
         let mut tried_any_down = false;
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // CoreDNS's 5 s overall budget, or the `cancel` deadline if sooner
+        let budget = Instant::now() + Duration::from_secs(5);
+        let deadline = req.deadline.map_or(budget, |d| d.min(budget));
         let mut i = 0;
         let mut last_reply: Option<Message> = None;
         loop {
-            if Instant::now() > deadline {
+            if Instant::now() >= deadline {
                 break;
             }
             // pick the next healthy proxy; if all are down, try each once anyway
@@ -425,9 +427,8 @@ impl ForwardHandler {
                 }
             };
             let Some(p) = p else { break };
-            let need_tcp_retry = false;
-            let _ = need_tcp_retry;
-            match f.connect(&p, req).await {
+            let tried = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), f.connect(&p, req)).await;
+            match tried.unwrap_or_else(|_| Err(anyhow!("i/o timeout"))) {
                 Ok(mut resp) => {
                     if !req.matches(&resp) {
                         // wrong id/question: treat as failure of this upstream
@@ -678,6 +679,20 @@ mod tests {
         assert!(f.force_tcp);
         assert_eq!(f.next_rcodes, vec![ResponseCode::NXDomain]);
         assert_eq!(f.proxies[1].transport, UpstreamTransport::Tls);
+    }
+
+    #[tokio::test]
+    async fn stops_at_the_cancel_deadline() {
+        // an upstream that never answers: without a deadline this takes the full 5 s budget
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = silent.local_addr().unwrap();
+        let f = ctl_parse(&format!("forward . {}\n", addr)).unwrap();
+        let h = ForwardHandler(Arc::new(f));
+        let mut req = Request::for_test("example.org.", hickory_proto::rr::RecordType::A);
+        req.deadline = Some(Instant::now() + Duration::from_millis(200));
+        let start = Instant::now();
+        assert!(h.forward(&mut req).await.is_err());
+        assert!(start.elapsed() < Duration::from_secs(2), "took {:?}", start.elapsed());
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 use super::Handler;
 use crate::corefile::{Dispenser, Token};
-use crate::server::config::{Hook, ServerConfig};
+use crate::server::config::{Hook, RestartHook, ServerConfig};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -74,10 +74,14 @@ impl<'a> Controller<'a> {
     pub fn on_shutdown(&mut self, h: Hook) {
         self.config.shutdown.push(h);
     }
-    pub fn on_restart(&mut self, h: Hook) {
+    /// Runs before every reload of this instance (CoreDNS `OnRestart`).
+    /// An error aborts that reload and keeps the running instance.
+    pub fn on_restart(&mut self, h: RestartHook) {
         self.config.restart.push(h);
     }
-    pub fn on_restart_failed(&mut self, h: Hook) {
+    /// Runs when a reload of this instance fails and it keeps serving
+    /// (CoreDNS `OnRestartFailed`).
+    pub fn on_restart_failed(&mut self, h: RestartHook) {
         self.config.restart_failed.push(h);
     }
 

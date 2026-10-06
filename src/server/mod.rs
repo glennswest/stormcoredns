@@ -45,7 +45,6 @@ pub struct Server {
     pub write_timeout: Duration,
     pub idle_timeout: Duration,
     pub num_sockets: usize,
-    pub debug: bool,
     pub graceful_timeout: Duration,
 }
 
@@ -427,7 +426,8 @@ pub struct Instance {
     cancel: CancellationToken,
     tasks: Vec<tokio::task::JoinHandle<()>>,
     shutdown_hooks: Vec<config::Hook>,
-    pub restart_failed_hooks: Vec<config::Hook>,
+    restart_hooks: Vec<config::RestartHook>,
+    restart_failed_hooks: Vec<config::RestartHook>,
 }
 
 /// Signalled (by the `reload` plugin) to request a restart of the whole
@@ -469,6 +469,7 @@ impl Instance {
     pub async fn start(blocks: Vec<crate::corefile::ServerBlock>, opts: &build::BuildOptions) -> Result<Instance> {
         let mut built = build::build(blocks, opts)?;
         let mut shutdown_hooks = Vec::new();
+        let mut restart_hooks = Vec::new();
         let mut restart_failed_hooks = Vec::new();
         let mut startup_hooks = Vec::new();
         let mut configs = Vec::new();
@@ -477,6 +478,7 @@ impl Instance {
             c.finalize_chain();
             startup_hooks.append(&mut c.startup);
             shutdown_hooks.append(&mut c.shutdown);
+            restart_hooks.append(&mut c.restart);
             restart_failed_hooks.append(&mut c.restart_failed);
             configs.push(Arc::new(c));
         }
@@ -554,10 +556,29 @@ impl Instance {
                 tracing::info!("{}://{} on {}", srv.transport.scheme(), shown, srv.zones.keys().cloned().collect::<Vec<_>>().join(", "));
             }
         }
-        Ok(Instance { servers, configs, cancel, tasks, shutdown_hooks, restart_failed_hooks })
+        Ok(Instance { servers, configs, cancel, tasks, shutdown_hooks, restart_hooks, restart_failed_hooks })
     }
 
-    /// Run shutdown hooks, then stop listeners.
+    /// Run the `on_restart` hooks before a reload; the first error stops
+    /// them and is returned (the reload must not go ahead).
+    pub async fn run_restart_hooks(&self) -> Result<()> {
+        for h in &self.restart_hooks {
+            h().await?;
+        }
+        Ok(())
+    }
+
+    /// Run the `on_restart_failed` hooks after a failed reload.
+    pub async fn run_restart_failed_hooks(&self) {
+        for h in &self.restart_failed_hooks {
+            if let Err(e) = h().await {
+                tracing::warn!("restart_failed hook: {}", e);
+            }
+        }
+    }
+
+    /// Run shutdown hooks, then stop listeners, waiting up to the longest
+    /// server `graceful_timeout` for them to finish.
     pub async fn stop(mut self) {
         // hooks first: `health` lameduck keeps DNS answering while the
         // endpoint reports 503, then the listeners go away
@@ -567,8 +588,10 @@ impl Instance {
             }
         }
         self.cancel.cancel();
+        let grace = self.servers.iter().map(|s| s.graceful_timeout).max().unwrap_or(Duration::from_secs(5));
+        let deadline = tokio::time::Instant::now() + grace;
         for t in self.tasks.drain(..) {
-            let _ = tokio::time::timeout(Duration::from_secs(5), t).await;
+            let _ = tokio::time::timeout_at(deadline, t).await;
         }
     }
 
@@ -585,4 +608,43 @@ impl Instance {
 enum BoundListener {
     Udp(std::net::UdpSocket),
     Tcp(std::net::TcpListener),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn counting(n: &Arc<AtomicUsize>, fail: bool) -> config::RestartHook {
+        let n = n.clone();
+        Arc::new(move || {
+            n.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { if fail { Err(anyhow!("no")) } else { Ok(()) } })
+        })
+    }
+
+    #[tokio::test]
+    async fn restart_hooks_run_on_every_reload_attempt() {
+        let blocks = crate::corefile::parser::parse_str(".:0 {\n bind 127.0.0.1\n whoami\n}\n", "t", std::path::Path::new(".")).unwrap();
+        let opts = build::BuildOptions { default_port: 0, ..Default::default() };
+        let mut inst = Instance::start(blocks, &opts).await.unwrap();
+        let (restart, failed) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        inst.restart_hooks.push(counting(&restart, false));
+        inst.restart_failed_hooks.push(counting(&failed, false));
+        for _ in 0..2 {
+            inst.run_restart_hooks().await.unwrap();
+            inst.run_restart_failed_hooks().await;
+        }
+        assert_eq!(restart.load(Ordering::SeqCst), 2);
+        assert_eq!(failed.load(Ordering::SeqCst), 2);
+        // a failing restart hook stops the ones after it and reports the error
+        let bad = Arc::new(AtomicUsize::new(0));
+        inst.restart_hooks.insert(0, counting(&bad, true));
+        assert!(inst.run_restart_hooks().await.is_err());
+        assert_eq!(bad.load(Ordering::SeqCst), 1);
+        assert_eq!(restart.load(Ordering::SeqCst), 2);
+        let t = std::time::Instant::now();
+        inst.stop().await;
+        assert!(t.elapsed() < Duration::from_secs(5));
+    }
 }

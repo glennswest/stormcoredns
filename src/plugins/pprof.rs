@@ -51,6 +51,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     if a.len() != 1 || a[0].parse::<u64>().is_err() {
                         return Err(c.errf("block RATE expected"));
                     }
+                    tracing::warn!("plugin/pprof: block is ignored (no Go block profile in this build)");
                 }
                 o => return Err(c.errf(format!("unknown property '{}'", o))),
             }

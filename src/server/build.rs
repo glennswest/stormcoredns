@@ -17,12 +17,11 @@ pub struct BuildOptions {
     /// Port for keys that carry none (`-dns.port`).
     pub default_port: u16,
     pub corefile: PathBuf,
-    pub quiet: bool,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        BuildOptions { default_port: 53, corefile: PathBuf::from("Corefile"), quiet: false }
+        BuildOptions { default_port: 53, corefile: PathBuf::from("Corefile") }
     }
 }
 
@@ -132,7 +131,6 @@ pub fn group_servers(configs: &[Arc<ServerConfig>]) -> Result<Vec<Arc<Server>>> 
         let mut write_timeout = Duration::from_secs(2);
         let mut idle_timeout = Duration::from_secs(10);
         let mut num_sockets = 1;
-        let mut debug = false;
         for c in cfgs {
             if let Some(existing) = zones.get(&c.zone) {
                 let dup = existing.iter().any(|e| e.config.view_name == c.view_name);
@@ -158,7 +156,6 @@ pub fn group_servers(configs: &[Arc<ServerConfig>]) -> Result<Vec<Arc<Server>>> 
                 idle_timeout = t;
             }
             num_sockets = num_sockets.max(c.num_sockets);
-            debug |= c.debug;
             let chain = Arc::new(c.chain());
             zones.entry(c.zone.clone()).or_default().push(ZoneEntry { config: c, chain });
         }
@@ -180,8 +177,7 @@ pub fn group_servers(configs: &[Arc<ServerConfig>]) -> Result<Vec<Arc<Server>>> 
             write_timeout,
             idle_timeout,
             num_sockets,
-            debug,
-            graceful_timeout: Duration::from_secs(5),
+            graceful_timeout: Duration::from_secs(5), // CoreDNS graceTimeout, not configurable there either
         }));
     }
     Ok(servers)

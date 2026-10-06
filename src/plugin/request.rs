@@ -116,7 +116,8 @@ pub struct Request {
     pub view: String,
     pub metadata: Metadata,
     pub ext: Extensions,
-    /// Absolute deadline set by the `cancel` plugin.
+    /// Absolute deadline set by the `cancel` plugin; `forward` stops
+    /// trying upstreams once it passes.
     pub deadline: Option<Instant>,
     pub tls_server_name: Option<String>,
     pub http: Option<HttpInfo>,

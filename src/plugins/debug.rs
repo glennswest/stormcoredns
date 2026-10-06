@@ -1,6 +1,6 @@
-//! `debug` — disables panic recovery (we always recover, so this only
-//! turns on verbose logging for the server block) and enables debug
-//! output from plugins that check `config.debug`.
+//! `debug` — in CoreDNS, disables panic recovery and enables debug
+//! output. Here it is accepted and has no effect: panic recovery is
+//! always on, and log levels come from `STORMCOREDNS_LOG`/`RUST_LOG`.
 
 use crate::plugin::Controller;
 
@@ -15,6 +15,5 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             return Err(c.arg_err());
         }
     }
-    c.config.debug = true;
     Ok(())
 }

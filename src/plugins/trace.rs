@@ -93,13 +93,15 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     let a = c.remaining_args();
                     t.client_server = a.first().map(|v| v != "false").unwrap_or(true);
                 }
-                "datadog_analytics_rate" | "zipkin_max_backlog_size" | "zipkin_max_batch_size" | "zipkin_max_batch_interval" => {
+                o @ ("datadog_analytics_rate" | "zipkin_max_backlog_size" | "zipkin_max_batch_size" | "zipkin_max_batch_interval") => {
+                    let o = o.to_string();
                     let _ = c.remaining_args();
+                    tracing::warn!("plugin/trace: {} is ignored (no exporter in this build)", o);
                 }
                 o => return Err(c.errf(format!("unknown property '{}'", o))),
             }
         }
-        tracing::info!("plugin/trace: {} endpoint {} configured; spans are emitted to the log subscriber (no exporter in this build)", endpoint_type, endpoint);
+        tracing::warn!("plugin/trace: {} endpoint {} is not used; spans are emitted to the log subscriber (no exporter in this build)", endpoint_type, endpoint);
         c.add_plugin(Arc::new(t));
     }
     Ok(())

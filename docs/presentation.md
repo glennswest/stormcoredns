@@ -271,7 +271,6 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 | #6 | after any reload, `/health` stays at 503, so a liveness probe would restart the pod |
 | #7 | one failed reload stops automatic reloads until SIGHUP |
 | #8 | after a reload, `:53` listens on IPv4 only |
-| #9 | `loop` exits the process when the upstream takes more than 2 s |
 | #14 | NXDOMAIN (not SERVFAIL) before the watches sync |
 
 Also open: #10 dnssec, #11 secondary, #12 view, #13 file wildcards, #15

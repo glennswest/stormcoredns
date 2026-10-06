@@ -20,9 +20,6 @@ pub struct NameData {
 }
 
 impl NameData {
-    fn is_empty(&self) -> bool {
-        self.rrsets.is_empty()
-    }
     fn has(&self, t: RecordType) -> bool {
         self.rrsets.get(&t).map(|v| !v.is_empty()).unwrap_or(false)
     }

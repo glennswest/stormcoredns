@@ -138,7 +138,7 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] `reload` per `file` stanza
 - [x] DNAME (RFC 6672): the zone text's DNAME type token is parsed as ANAME (`dname_as_aname`) and stored as type 39; DNAME + synthesized CNAME, YXDOMAIN when too long; a real ANAME is refused
 - [x] NSEC3 denial proofs (RFC 5155 7.2): NXDOMAIN, NODATA/opt-out, wildcard answer/NODATA, referral
-- [x] sc-build green at c35d48d (68+6 tests, no warnings) + live check on dev (closest-encloser NXDOMAIN, DNAME chain, YXDOMAIN, per-stanza reload); `coredns` golden staged
+- [x] sc-build green at c35d48d (68+6 tests, no warnings) + live check on dev (closest-encloser NXDOMAIN, DNAME chain, YXDOMAIN, per-stanza reload); golden `golden-coredns-f17e28c24280` (stormcos#348)
 - [x] Found: hickory 0.24's zone parser refuses RRSIG/NSEC/NSEC3/DNSKEY, so signed zone files (and `sign`'s output) don't load in `file` — filed #20
 
 ### Next — bugs found by the #3 audit

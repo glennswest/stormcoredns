@@ -65,8 +65,10 @@ pub fn load(path: &PathBuf, origin: &str) -> anyhow::Result<Zone> {
 
 pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     let mut zones: Vec<Arc<FileZone>> = Vec::new();
-    let mut reload = Duration::from_secs(60);
+    // each stanza's own reload interval (0 disables polling for its zones)
+    let mut watched: Vec<(Arc<FileZone>, Duration)> = Vec::new();
     while c.next() {
+        let mut reload = Duration::from_secs(60);
         let mut args = c.remaining_args_until_brace();
         if args.is_empty() {
             return Err(c.arg_err());
@@ -92,18 +94,22 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
         for origin in origins {
             let z = load(&path, &origin).map_err(|e| c.errf(e))?;
             tracing::info!("plugin/file: loaded zone {} from {} (serial {}, {} records)", origin, path.display(), z.serial, z.len());
-            zones.push(Arc::new(FileZone { origin, path: path.clone(), zone: ArcSwap::from_pointee(z) }));
+            let fz = Arc::new(FileZone { origin, path: path.clone(), zone: ArcSwap::from_pointee(z) });
+            if !reload.is_zero() {
+                watched.push((fz.clone(), reload));
+            }
+            zones.push(fz);
         }
     }
     let names: Vec<String> = zones.iter().map(|z| z.origin.clone()).collect();
-    let f = Arc::new(File { zones: zones.clone(), names });
+    let f = Arc::new(File { zones, names });
     c.add_plugin(f);
-    if !reload.is_zero() {
+    if !watched.is_empty() {
         let cancel = tokio_util::sync::CancellationToken::new();
         let stop = cancel.clone();
         c.on_startup(Box::new(move || {
             Box::pin(async move {
-                for fz in zones {
+                for (fz, reload) in watched {
                     let cancel = cancel.clone();
                     tokio::spawn(async move {
                         let mut last_mtime = std::fs::metadata(&fz.path).and_then(|m| m.modified()).ok();

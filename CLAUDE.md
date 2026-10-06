@@ -127,10 +127,11 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] 3 unit tests; sc-build green at 219c6ad, with live checks on dev: `forward . 192.0.2.1` stays up (3 unanswered probes, warnings only), `forward` to itself still exits 1 on the loop
 - [x] `coredns` golden staged
 
-### In progress — #16 dead hooks and unused fields (2026-10-06)
-- [ ] Wire: `on_restart` (run before each reload) and `on_restart_failed` become repeatable `RestartHook`s kept by the instance; `Instance::stop` uses `Server.graceful_timeout`; `forward` caps its upstream timeout at the `cancel` deadline and stops trying upstreams once it passes
-- [ ] Remove: `Handler::health()`, `BuildOptions.quiet`, `ServerConfig.{debug,stacktrace,metadata}`, `Server.debug`, `ParsedKey.ipv4_only`, `file::zone::{quick_serial,unused_bail}`
-- [ ] Ignored options stay documented (CoreDNS ignores `upstream`/`stubzones` too); `pprof block` and trace exporter options log a warning
+### Done — #16 dead hooks and unused fields (2026-10-06)
+- [x] Wired: `on_restart` (before each reload; an error aborts it) and `on_restart_failed` are repeatable `RestartHook`s kept by the instance; `Instance::stop` uses `Server.graceful_timeout`; `forward` stops at the `cancel` deadline, and its 5 s budget bounds each exchange
+- [x] Removed: `Handler::health()`, `BuildOptions.quiet`, `ServerConfig.{debug,stacktrace,metadata}`, `Server.debug`, `ParsedKey.ipv4_only`, `file::zone::{quick_serial,unused_bail,NameData::is_empty}` (the build is warning-free)
+- [x] Ignored options documented per plugin in docs/plugins.md (`upstream`/`stubzones` ignored as in CoreDNS); `pprof block` and trace exporter options warn
+- [x] sc-build green at 2ab4c86: no warnings, 59+6 tests, live SIGHUP reload + SIGTERM exit on dev. Live scripts: the binary is `${CARGO_TARGET_DIR:-target}/debug/stormcoredns` (CARGO_TARGET_DIR is set on dev — that is what #19 tripped on)
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
@@ -141,4 +142,4 @@ Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #10 dnssec bogus NXDOMAIN NSEC, RRSIG cache expiry
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #12 view metadata(); #13 file wildcards/DNAME
-- [ ] #15 CoreDNS divergences (verify each against 1.12 first); #16 dead hooks/ignored options
+- [ ] #15 CoreDNS divergences (verify each against 1.12 first)

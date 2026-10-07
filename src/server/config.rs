@@ -119,6 +119,8 @@ pub struct ServerConfig {
     pub num_sockets: usize,
     pub startup: Vec<Hook>,
     pub shutdown: Vec<Hook>,
+    /// Run only when the process exits, not on a reload (CoreDNS `OnFinalShutdown`).
+    pub final_shutdown: Vec<Hook>,
     pub restart: Vec<RestartHook>,
     pub restart_failed: Vec<RestartHook>,
     /// Arbitrary per-config values plugins share at setup (e.g. `tls`
@@ -149,6 +151,7 @@ impl ServerConfig {
             num_sockets: 1,
             startup: Vec::new(),
             shutdown: Vec::new(),
+            final_shutdown: Vec::new(),
             restart: Vec::new(),
             restart_failed: Vec::new(),
             values: HashMap::new(),

@@ -443,6 +443,7 @@ pub struct Instance {
     cancel: CancellationToken,
     tasks: Vec<tokio::task::JoinHandle<()>>,
     shutdown_hooks: Vec<config::Hook>,
+    final_shutdown_hooks: Vec<config::Hook>,
     restart_hooks: Vec<config::RestartHook>,
     restart_failed_hooks: Vec<config::RestartHook>,
 }
@@ -486,6 +487,7 @@ impl Instance {
     pub async fn start(blocks: Vec<crate::corefile::ServerBlock>, opts: &build::BuildOptions) -> Result<Instance> {
         let mut built = build::build(blocks, opts)?;
         let mut shutdown_hooks = Vec::new();
+        let mut final_shutdown_hooks = Vec::new();
         let mut restart_hooks = Vec::new();
         let mut restart_failed_hooks = Vec::new();
         let mut startup_hooks = Vec::new();
@@ -495,6 +497,7 @@ impl Instance {
             c.finalize_chain();
             startup_hooks.append(&mut c.startup);
             shutdown_hooks.append(&mut c.shutdown);
+            final_shutdown_hooks.append(&mut c.final_shutdown);
             restart_hooks.append(&mut c.restart);
             restart_failed_hooks.append(&mut c.restart_failed);
             configs.push(Arc::new(c));
@@ -573,7 +576,7 @@ impl Instance {
                 tracing::info!("{}://{} on {}", srv.transport.scheme(), shown, srv.zones.keys().cloned().collect::<Vec<_>>().join(", "));
             }
         }
-        Ok(Instance { servers, configs, cancel, tasks, shutdown_hooks, restart_hooks, restart_failed_hooks })
+        Ok(Instance { servers, configs, cancel, tasks, shutdown_hooks, final_shutdown_hooks, restart_hooks, restart_failed_hooks })
     }
 
     /// Run the `on_restart` hooks before a reload; the first error stops
@@ -594,11 +597,21 @@ impl Instance {
         }
     }
 
+    /// Process exit: the final-shutdown hooks (`health` lameduck, with DNS
+    /// still answering and `/ready` at 503), then `stop`. A reload calls
+    /// `stop` alone, so it is never delayed by lameduck.
+    pub async fn stop_final(mut self) {
+        for h in self.final_shutdown_hooks.drain(..) {
+            if let Err(e) = h().await {
+                tracing::warn!("final shutdown hook: {}", e);
+            }
+        }
+        self.stop().await;
+    }
+
     /// Run shutdown hooks, then stop listeners, waiting up to the longest
     /// server `graceful_timeout` for them to finish.
     pub async fn stop(mut self) {
-        // hooks first: `health` lameduck keeps DNS answering while the
-        // endpoint reports 503, then the listeners go away
         for h in self.shutdown_hooks.drain(..) {
             if let Err(e) = h().await {
                 tracing::warn!("shutdown hook: {}", e);
@@ -701,6 +714,39 @@ mod tests {
             assert_eq!(sa, format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap());
         }
         assert_eq!(resolve_bind("127.0.0.1:53").unwrap(), "127.0.0.1:53".parse::<SocketAddr>().unwrap());
+    }
+
+    #[tokio::test]
+    async fn lameduck_only_at_process_exit() {
+        let corefile = ".:0 {\n bind 127.0.0.1\n health 127.0.0.1:18080 {\n  lameduck 2s\n }\n ready 127.0.0.1:18181\n whoami\n}\n";
+        let start = || async {
+            let blocks = crate::corefile::parser::parse_str(corefile, "t", std::path::Path::new(".")).unwrap();
+            let opts = build::BuildOptions { default_port: 0, ..Default::default() };
+            Instance::start(blocks, &opts).await.unwrap()
+        };
+        let get = |path: &'static str| async move {
+            let c = reqwest::Client::builder().timeout(Duration::from_secs(2)).build().unwrap();
+            c.get(format!("http://127.0.0.1:{}", path)).send().await.map(|r| r.status().as_u16()).unwrap_or(0)
+        };
+        let old = start().await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(get("18080/health").await, 200);
+        // a reload: the new instance starts, the old one stops without lameduck
+        let new = start().await;
+        let t = std::time::Instant::now();
+        old.stop().await;
+        assert!(t.elapsed() < Duration::from_secs(2), "a reload does not wait for lameduck ({:?})", t.elapsed());
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(get("18080/health").await, 200, "healthy after the reload");
+        assert_eq!(get("18181/ready").await, 200);
+        // process exit: lameduck with /health still OK and /ready not
+        let t = std::time::Instant::now();
+        let exit = tokio::spawn(new.stop_final());
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(get("18080/health").await, 200, "/health stays OK during lameduck, as in CoreDNS");
+        assert_eq!(get("18181/ready").await, 503, "/ready is 503 during lameduck");
+        exit.await.unwrap();
+        assert!(t.elapsed() >= Duration::from_secs(2), "exit waited for lameduck");
     }
 
     #[tokio::test]

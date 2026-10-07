@@ -170,7 +170,7 @@ async fn run(args: Args) -> Result<()> {
             }
         }
     }
-    inst.stop().await;
+    inst.stop_final().await;
     if let Some(p) = &args.pidfile {
         let _ = std::fs::remove_file(p);
     }

@@ -1,21 +1,15 @@
 //! `health [ADDRESS] { lameduck DURATION }` — HTTP `/health` endpoint
-//! (default `:8080`). Returns 200 "OK"; during the lameduck period at
-//! shutdown it returns 503 and the process keeps serving DNS.
+//! (default `:8080`) that returns 200 "OK" while the process runs. As in
+//! CoreDNS, `lameduck` delays the final shutdown (process exit, never a
+//! reload): DNS keeps answering and `/health` keeps saying OK, while
+//! `/ready` turns 503.
 
 use crate::plugin::Controller;
-use crate::server::config::ServerConfig;
 use crate::server::http_util::{self, Endpoints};
 use once_cell::sync::Lazy;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-static HEALTHY: AtomicBool = AtomicBool::new(true);
 static ENDPOINTS: Lazy<Endpoints> = Lazy::new(Endpoints::default);
-
-pub fn post_finalize(_configs: &[Arc<ServerConfig>]) {
-    HEALTHY.store(true, Ordering::Relaxed);
-}
 
 pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     let mut addr = ":8080".to_string();
@@ -77,23 +71,24 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
         c.on_shutdown(Box::new(move || {
             Box::pin(async move {
                 cancel.cancel();
-                if !lameduck.is_zero() {
-                    HEALTHY.store(false, Ordering::Relaxed);
-                    tracing::info!("plugin/health: going lameduck for {:?}", lameduck);
-                    tokio::time::sleep(lameduck).await;
-                }
                 Ok(())
             })
         }));
+        if !lameduck.is_zero() {
+            c.on_final_shutdown(Box::new(move || {
+                Box::pin(async move {
+                    crate::plugins::ready::set_draining();
+                    tracing::info!("plugin/health: going into lameduck mode for {:?}", lameduck);
+                    tokio::time::sleep(lameduck).await;
+                    Ok(())
+                })
+            }));
+        }
         ENDPOINTS.install(c, &addr, |req| async move {
             if req.uri().path() != "/health" {
                 return http_util::text(404, "not found");
             }
-            if HEALTHY.load(Ordering::Relaxed) {
-                http_util::text(200, "OK")
-            } else {
-                http_util::text(503, "lameduck")
-            }
+            http_util::text(200, "OK")
         });
         Ok(())
     })?;

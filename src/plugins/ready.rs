@@ -15,6 +15,13 @@ static ENABLED_BLOCKS: Lazy<Mutex<HashSet<usize>>> = Lazy::new(|| Mutex::new(Has
 /// Plugins that participate in readiness, (plugin name, handler).
 static PLUGINS: Lazy<Mutex<Vec<(&'static str, Arc<dyn Handler>)>>> = Lazy::new(|| Mutex::new(Vec::new()));
 static ENDPOINTS: Lazy<Endpoints> = Lazy::new(Endpoints::default);
+/// Set at process exit (CoreDNS's ready `onFinalShutdown`): `/ready` is 503
+/// from then on, including the `health` lameduck period.
+static DRAINING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_draining() {
+    DRAINING.store(true, std::sync::atomic::Ordering::Relaxed);
+}
 
 pub fn post_finalize(configs: &[Arc<ServerConfig>]) {
     let blocks = std::mem::take(&mut *ENABLED_BLOCKS.lock());
@@ -63,9 +70,18 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     }
     ENABLED_BLOCKS.lock().insert(c.server_block_index);
     c.once_per_server_block(|c| {
+        c.on_final_shutdown(Box::new(|| {
+            Box::pin(async {
+                set_draining();
+                Ok(())
+            })
+        }));
         ENDPOINTS.install(c, &addr, |req| async move {
             if req.uri().path() != "/ready" {
                 return http_util::text(404, "not found");
+            }
+            if DRAINING.load(std::sync::atomic::Ordering::Relaxed) {
+                return http_util::text(503, "shutting down");
             }
             let nr = not_ready();
             if nr.is_empty() {

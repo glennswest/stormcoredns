@@ -61,7 +61,6 @@ pub mod route53;
 pub fn post_finalize(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
     wire::run(configs);
     ready::post_finalize(configs);
-    health::post_finalize(configs);
     metrics::post_finalize(configs);
 }
 

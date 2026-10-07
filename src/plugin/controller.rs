@@ -74,6 +74,11 @@ impl<'a> Controller<'a> {
     pub fn on_shutdown(&mut self, h: Hook) {
         self.config.shutdown.push(h);
     }
+    /// Runs only when the process exits, before the shutdown hooks; never
+    /// on a reload (CoreDNS `OnFinalShutdown`).
+    pub fn on_final_shutdown(&mut self, h: Hook) {
+        self.config.final_shutdown.push(h);
+    }
     /// Runs before every reload of this instance (CoreDNS `OnRestart`).
     /// An error aborts that reload and keeps the running instance.
     pub fn on_restart(&mut self, h: RestartHook) {

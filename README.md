@@ -203,7 +203,7 @@ include the static binary, an image tarball and `SHA256SUMS`.
 These are the gaps against CoreDNS, each tracked in an issue:
 
 - `dnssec`/`sign`: ECDSA P-256/P-384 and Ed25519 only, no RSA (no OpenSSL
-  linked). No NSEC3, no CDS/CDNSKEY. #10 covers the dnssec proof and cache bugs.
+  linked). No NSEC3, no CDS/CDNSKEY.
 - `file`/`auto` cannot load zone files that hold RRSIG, NSEC, NSEC3 or
   DNSKEY records, so `sign`'s output cannot be served by `file` (#20). Signed
   zones served through `secondary` get NSEC or NSEC3 denial proofs.

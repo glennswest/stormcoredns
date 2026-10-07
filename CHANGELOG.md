@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#10)
+Checked against CoreDNS v1.12.4 `plugin/dnssec`.
+- **fix:** Black-lie NSEC for NXDOMAIN (as well as NODATA) leaves the queried type out of its bitmap. Before, an NXDOMAIN turned into NOERROR claimed the type existed, and validators found that bogus. A query for NSEC keeps it in the bitmap and gets the NSEC as the answer.
+- **fix:** The black-lie NSEC TTL comes from the SOA in the response, not a fixed 3600. Negatives are signed only when their authority is exactly one SOA, as in CoreDNS.
+- **fix:** Referrals sign only the DS set. Without a DS, they add an NSEC with CoreDNS's delegation bitmap (next name `<label>\000.<rest>`). The NS set and glue are no longer signed.
+- **fix:** A cached signature is re-made once it is within 2 days of its 8-day expiry. Before, a busy RRset kept its RRSIG past expiration until the LRU evicted it.
+- **fix:** Positive answers also sign the additional section. The bitmaps include LOC, CERT, HIP and SPF, as upstream's do.
+- **docs:** plugins.md, README and the presentation.
+
 ### 2026-10-07 (#14)
 Checked against CoreDNS v1.12.4 first. CoreDNS does not answer SERVFAIL before the API syncs: its startup hook waits for the sync, up to `startup_timeout`.
 - **fix:** `kubernetes` startup waits for every watch to sync, up to `startup_timeout DURATION` (new option, default 5s), as CoreDNS does, so a new server no longer answers NXDOMAIN from empty caches in its first moments. On a reload the old instance keeps serving meanwhile.

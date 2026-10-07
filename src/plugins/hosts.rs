@@ -110,6 +110,11 @@ impl Hosts {
         *self.map.write() = m;
     }
 
+    fn has_address(&self, qname: &str) -> bool {
+        let map = self.map.read();
+        map.v4.contains_key(qname) || map.v6.contains_key(qname)
+    }
+
     fn lookup(&self, qname: &str, name: &Name, qtype: RecordType) -> (Vec<Record>, bool) {
         let map = self.map.read();
         let mut answers: Vec<Record> = Vec::new();
@@ -152,24 +157,28 @@ impl Handler for Hosts {
 
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
         let qname = req.name();
-        if crate::plugin::zones_match(&self.zones, &qname).is_none() {
+        let qtype = req.qtype();
+        // as in CoreDNS: PTR queries need not be in the zones, and a PTR
+        // with no entry always goes to the next plugin
+        if qtype != RecordType::PTR && crate::plugin::zones_match(&self.zones, &qname).is_none() {
             return next.serve(req).await;
         }
         let name = req.qname();
-        let (answers, name_exists) = self.lookup(&qname, &name, req.qtype());
-        if answers.is_empty() {
+        let (answers, _) = self.lookup(&qname, &name, qtype);
+        if qtype == RecordType::PTR && answers.is_empty() {
+            return next.serve(req).await;
+        }
+        if answers.is_empty() && !self.has_address(&qname) {
+            // the name is unknown: fall through, or SERVFAIL (there is no
+            // SOA for an NXDOMAIN), as CoreDNS does
             if let Some(ft) = &self.fallthrough {
                 if crate::plugin::zones_match(ft, &qname).is_some() {
                     return next.serve(req).await;
                 }
             }
-            let mut m = req.new_reply();
-            m.set_authoritative(true);
-            if !name_exists {
-                m.set_response_code(ResponseCode::NXDomain);
-            }
-            return Ok(Reply::Msg(m));
+            return Ok(Reply::Rcode(ResponseCode::ServFail));
         }
+        // answers, or NODATA for a name that has the other address family
         let mut m = req.new_reply();
         m.set_authoritative(true);
         for r in answers {
@@ -292,12 +301,23 @@ mod tests {
         let mut req = Request::for_test("v6.example.org.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
         assert_eq!(m.response_code(), ResponseCode::NoError, "NODATA: name exists as AAAA");
-        let mut req = Request::for_test("nope.example.org.", RecordType::A);
+        let mut req = Request::for_test("v6.example.org.", RecordType::MX);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.response_code(), ResponseCode::NoError, "NODATA for another type");
+        let mut req = Request::for_test("nope.example.org.", RecordType::A);
+        let r = h.serve_dns(&mut req, Next::new(&[])).await.unwrap();
+        assert!(matches!(r, Reply::Rcode(ResponseCode::ServFail)), "unknown name is SERVFAIL, as in CoreDNS");
+        // PTR outside the zones is still answered; an unknown PTR goes on
         let mut req = Request::for_test("1.0.0.10.in-addr.arpa.", RecordType::PTR);
-        let h2 = Hosts { zones: vec![".".into()], ..h };
-        let m = h2.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
+        let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
         assert_eq!(m.answers().len(), 2);
+        let mut req = Request::for_test("9.0.0.10.in-addr.arpa.", RecordType::PTR);
+        assert!(h.serve_dns(&mut req, Next::new(&[])).await.is_err(), "unknown PTR → next (empty chain)");
+        // fallthrough only for unknown names
+        let h2 = Hosts { fallthrough: Some(vec![".".into()]), ..h };
+        let mut req = Request::for_test("nope.example.org.", RecordType::A);
+        assert!(h2.serve_dns(&mut req, Next::new(&[])).await.is_err());
+        let mut req = Request::for_test("v6.example.org.", RecordType::A);
+        assert!(h2.serve_dns(&mut req, Next::new(&[])).await.is_ok(), "NODATA does not fall through");
     }
 }

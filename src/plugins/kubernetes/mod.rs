@@ -13,6 +13,7 @@
 //!     endpoint_pod_names
 //!     ttl TTL
 //!     noendpoints
+//!     startup_timeout DURATION   # default 5s: startup waits this long for the API to sync
 //!     fallthrough [ZONES...]
 //!     ignore empty_service
 //! }
@@ -20,6 +21,7 @@
 
 pub mod store;
 
+use std::time::Duration;
 use crate::dnsutil;
 use crate::plugin::{error, Controller, DnsResult, Handler, Next, Reply, Request};
 use anyhow::{anyhow, Result};
@@ -585,6 +587,8 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             autopath_search: std::fs::read_to_string("/etc/resolv.conf").map(|t| crate::plugins::autopath::search_from_resolv(&t)).unwrap_or_default(),
         };
         let mut labels: Option<String> = None;
+        // how long startup waits for the API to sync (CoreDNS default 5s)
+        let mut startup_timeout = Duration::from_secs(5);
         let mut namespace_labels: Option<String> = None;
         while c.next_block() {
             match c.val() {
@@ -661,6 +665,13 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     k.ttl = t;
                 }
                 "noendpoints" => k.watch_endpoints = false,
+                "startup_timeout" => {
+                    let a = c.remaining_args();
+                    if a.len() != 1 {
+                        return Err(c.arg_err());
+                    }
+                    startup_timeout = crate::dnsutil::parse_duration(&a[0])?;
+                }
                 "fallthrough" => {
                     let a = c.remaining_args();
                     k.fallthrough = Some(if a.is_empty() { vec![".".into()] } else { crate::plugin::normalize_zones(&a)? });
@@ -689,10 +700,29 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             watch_pods: k.pod_mode == PodMode::Verified,
             watch_endpoints: k.watch_endpoints,
         };
+        if tls.is_some() && (endpoint.is_none() || kubeconfig.is_some()) {
+            tracing::warn!("plugin/kubernetes: tls is only used with endpoint (and not with kubeconfig); ignoring it");
+        }
         c.on_startup(Box::new(move || {
             Box::pin(async move {
                 let client = make_client(endpoint, tls, kubeconfig, &root).await?;
-                store::start(client, k.store.clone(), watch_opts).await
+                store::start(client, k.store.clone(), watch_opts).await?;
+                // as in CoreDNS: hold startup until the API has synced, at most startup_timeout
+                let (pods, eps) = (k.pod_mode == PodMode::Verified, k.watch_endpoints);
+                let deadline = tokio::time::Instant::now() + startup_timeout;
+                let mut last_log = tokio::time::Instant::now();
+                while !k.store.synced(pods, eps) {
+                    if tokio::time::Instant::now() >= deadline {
+                        tracing::warn!("plugin/kubernetes: starting server with unsynced Kubernetes API");
+                        break;
+                    }
+                    if last_log.elapsed() >= Duration::from_millis(500) {
+                        tracing::info!("plugin/kubernetes: waiting for Kubernetes API before starting server");
+                        last_log = tokio::time::Instant::now();
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Ok(())
             })
         }));
     }
@@ -712,10 +742,8 @@ async fn make_client(endpoint: Option<String>, tls: Option<(String, String, Stri
             cfg.root_cert = Some(vec![std::fs::read(resolve(&ca)).map_err(|e| anyhow!("reading {}: {}", ca, e))?]);
             cfg.auth_info.client_certificate = Some(resolve(&cert).display().to_string());
             cfg.auth_info.client_key = Some(resolve(&key).display().to_string());
-        } else if url.starts_with("https://") {
-            tracing::warn!("plugin/kubernetes: endpoint {} without tls: accepting any server certificate", url);
-            cfg.accept_invalid_certs = true;
         }
+        // without tls, an https endpoint is verified against the system roots and sent no credentials, as in CoreDNS
         cfg
     } else {
         // as in CoreDNS: no kubeconfig/endpoint means in-cluster, never $KUBECONFIG or ~/.kube/config

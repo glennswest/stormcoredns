@@ -441,7 +441,8 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             percentage: 10,
             stale_upto: Duration::ZERO,
             refresh_mode: RefreshMode::Immediate,
-            failttl: Duration::ZERO,
+            // CoreDNS caches SERVFAIL for the minimal negative TTL (5 s) by default
+            failttl: Duration::from_secs(5),
             keepttl: false,
             disable_success: None,
             disable_denial: None,

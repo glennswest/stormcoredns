@@ -1,5 +1,5 @@
 //! `bufsize [SIZE]` — caps the EDNS0 UDP buffer size advertised by the
-//! client (default 512) so responses stay below the fragmentation limit.
+//! client (default 1232, as in CoreDNS) so responses stay below the fragmentation limit.
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Request};
 use async_trait::async_trait;
@@ -34,7 +34,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
         }
         let args = c.remaining_args();
         let size = match args.len() {
-            0 => 512,
+            0 => 1232, // CoreDNS default (DNS Flag Day 2020)
             1 => {
                 let s: u16 = args[0].parse().map_err(|_| c.errf(format!("invalid size {}", args[0])))?;
                 if !(512..=4096).contains(&s) {

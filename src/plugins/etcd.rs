@@ -57,9 +57,16 @@ impl Service {
     }
     fn ttl(&self) -> u32 {
         if self.ttl == 0 {
-            30
+            300 // CoreDNS defaultTTL
         } else {
             self.ttl
+        }
+    }
+    fn priority(&self) -> u16 {
+        if self.priority == 0 {
+            10 // CoreDNS defaultPriority
+        } else {
+            self.priority
         }
     }
     /// Synthesised owner for SRV/MX targets that are IPs: `<hash>.<name>`.
@@ -245,7 +252,7 @@ impl Etcd {
                         }
                     };
                     let weight = if s.weight == 0 { 100 / n } else { s.weight };
-                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::SRV(SRV::new(s.priority, weight, s.port, target))));
+                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::SRV(SRV::new(s.priority(), weight, s.port, target))));
                     if let Some(e) = extra {
                         m.add_additional(e);
                     }
@@ -264,7 +271,7 @@ impl Etcd {
                         }
                         None => Name::from_ascii(dnsutil::fqdn(&s.host))?,
                     };
-                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::MX(MX::new(s.priority, target))));
+                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::MX(MX::new(s.priority(), target))));
                 }
             }
             RecordType::TXT => {

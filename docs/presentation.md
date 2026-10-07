@@ -166,8 +166,8 @@ stormcoredns -conf FILE        # default "Corefile"
   (default `info`, or `warn` with `-quiet`).
 - **The Corefile is CoreDNS's**, with `import`, snippets and
   `{$ENV}`/`{%ENV%}`.
-- **Signals:** SIGHUP and SIGUSR1 reload; SIGINT and SIGTERM run the shutdown
-  hooks (lameduck), then close the listeners.
+- **Signals:** SIGHUP and SIGUSR1 reload; SIGINT and SIGTERM go lameduck
+  (exit only), then close the listeners.
 - **Identity:** `-version` prints `stormcoredns-0.1.1 (CoreDNS-1.12
   compatible)`, and `coredns_build_info{revision}` carries the git SHA.
 
@@ -178,7 +178,7 @@ stormcoredns -conf FILE        # default "Corefile"
 | port | endpoint | meaning |
 |---|---|---|
 | 53 | DNS | UDP and TCP |
-| 8080 | `/health` | 200 `OK`; 503 during lameduck while DNS keeps answering |
+| 8080 | `/health` | 200 `OK`, also during lameduck at exit (`/ready` is 503 then) |
 | 8181 | `/ready` | 200 once the kubernetes watches have synced; otherwise 503 with the plugin names |
 | 9153 | `/metrics` | Prometheus, only as `prometheus :9153`; a bare `prometheus` binds localhost |
 | 6053 | `/debug/pprof/` | process statistics (localhost) |
@@ -270,7 +270,6 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 
 | # | effect |
 |---|---|
-| #6 | after any reload, `/health` stays at 503, so a liveness probe would restart the pod |
 | #7 | one failed reload stops automatic reloads until SIGHUP |
 
 Also open: #21–#24

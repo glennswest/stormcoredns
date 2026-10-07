@@ -29,7 +29,7 @@ left is tracked in #21–#24. #16 covered the options that are accepted but igno
 | debug | full | Turns panic recovery off for the server block: a panic while serving is logged and the process exits (status 2), as an unrecovered Go panic does. Without it a panic returns SERVFAIL and increments `coredns_panics_total`. Log levels come from `STORMCOREDNS_LOG`/`RUST_LOG` |
 | trace | partial | Spans go to the `tracing` subscriber. There is no Zipkin or Datadog exporter: the endpoint and type are logged as unused, and the batch/backlog/analytics options are ignored with a warning |
 | ready | full | Default `:8181`, `GET /ready`. Readiness is re-checked on every request. Plugins that report it: kubernetes, route53, azure, clouddns |
-| health | full | Default `:8080`, `/health`, `lameduck` defaults to 0. It probes itself every second to feed `coredns_health_*`. Bug: #6 |
+| health | full | Default `:8080`, `/health` answers 200 `OK`, `lameduck` defaults to 0. As in CoreDNS, lameduck applies only at process exit (never on a reload): DNS keeps answering and `/health` stays 200 while `/ready` is 503. It probes itself every second to feed `coredns_health_*` |
 | pprof | partial | Default `localhost:6053`. `/debug/pprof/` serves process statistics (stats, heap, allocs, threads) as text, not Go profiles; other profiles return 501. `block` is ignored with a warning |
 | prometheus | full | Default `localhost:9153`, `/metrics`. See [Metrics](#metrics). `process_*` metrics are read from `/proc/self`; there are no `go_*` metrics |
 | errors | full | `stdout`, `stacktrace`, `consolidate DUR REGEXP [level]`. `stacktrace` records the errors plugin's own stack, not the origin of the error |

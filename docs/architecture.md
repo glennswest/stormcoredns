@@ -108,18 +108,19 @@ for external CNAME targets (`file`, `kubernetes`, `etcd`), `dns64`, and
 `Instance::start` builds configs, finalises chains, runs
 `plugins::post_finalize` (wiring, ready's plugin list, health, metrics),
 binds every listener, runs startup hooks (a failing hook aborts the start),
-then serves. `Instance::stop` runs shutdown hooks first (so `health`'s
-lameduck keeps answering DNS while `/health` reports 503), then cancels
+then serves. `Instance::stop` runs shutdown hooks, then cancels
 listeners, waiting up to the servers' `graceful_timeout` (5 s, CoreDNS's
-fixed grace time) for them all. `reload` hashes the Corefile
-(SHA-256) and, on change, signals the main loop; SIGHUP and SIGUSR1 do the
-same. The main loop runs the old instance's `restart` hooks (an error aborts the
+fixed grace time) for them all. At process exit `Instance::stop_final` first
+runs the final-shutdown hooks (CoreDNS `OnFinalShutdown`): `ready` turns
+`/ready` to 503 and `health`'s lameduck waits while DNS keeps answering and
+`/health` stays 200. A reload never runs them, so it is not delayed by
+lameduck (#6). `reload` hashes the parsed Corefile (SHA-512) and, on change,
+signals the main loop; SIGHUP and SIGUSR1 do the same. The main loop runs the old instance's `restart` hooks (an error aborts the
 reload), starts a new instance and stops the old one; a failed reload keeps
 the old instance, increments `coredns_reload_failed_total` and runs its
 `restart_failed` hooks. Both kinds run on every attempt (no plugin
-registers one today). Open bugs in this
-path: #6 (lameduck on reload leaves `/health` at 503), #7 (the watcher does
-not re-arm after a failed reload).
+registers one today). Open bug in this
+path: #7 (the watcher does not re-arm after a failed reload).
 
 The HTTP endpoints (`health`, `ready`, `prometheus`, `pprof`) share a
 registry keyed by address; on reload the new instance takes the listener

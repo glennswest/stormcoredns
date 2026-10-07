@@ -124,8 +124,9 @@ Corefile's SHA-256 at random intervals of 15–30 s. SIGHUP and SIGUSR1 also
 reload, with or without the plugin. On reload the new instance starts before
 the old one stops, and a Corefile that fails to load leaves the old instance
 running (`Restart failed: …`, `coredns_reload_failed_total`). SIGINT and
-SIGTERM shut down: shutdown hooks run first, so `health`'s lameduck applies,
-and then the listeners close. Two reload bugs are open, #6 and #7.
+SIGTERM shut down: `health`'s lameduck runs first (DNS keeps answering,
+`/health` stays 200, `/ready` turns 503), and then the listeners close. A
+reload never waits for lameduck. One reload bug is open, #7.
 
 ## Ports and endpoints
 
@@ -134,7 +135,7 @@ These are the defaults when a directive is given with no address:
 | directive | default address | paths |
 |---|---|---|
 | DNS | `:53` UDP + TCP (dual stack `[::]` when IPv6 is available) | |
-| `health` | `:8080` | `/health`: 200 `OK`, or 503 during lameduck |
+| `health` | `:8080` | `/health`: 200 `OK` (also during lameduck at exit, as in CoreDNS) |
 | `ready` | `:8181` | `/ready`: 200 `OK` once every plugin that reports readiness is ready (kubernetes, route53, azure, clouddns), otherwise 503 with their names |
 | `prometheus` | `localhost:9153` (loopback only; write `prometheus :9153` to expose it) | `/metrics` |
 | `pprof` | `localhost:6053` | `/debug/pprof/`: process statistics, not Go profiles |
@@ -215,8 +216,7 @@ These are the gaps against CoreDNS, each tracked in an issue:
   FORWARDER messages (#22), `route53` has no IRSA/ECS/IMDS credentials (#23),
   `tsig` has only HMAC-SHA256/384/512 and does not sign AXFR (#24). Options
   that are accepted and ignored are listed per plugin in docs/plugins.md.
-- Open bugs: #6 (`/health` stuck at 503 after a reload), #7 (automatic
-  reload stops after one failed reload), #20 (signed zone files).
+- Open bugs: #7 (automatic reload stops after one failed reload), #20 (signed zone files).
 
 ## Layout
 

@@ -40,8 +40,9 @@ The Corefile it uses is `errors`, `health { lameduck 5s }`, `ready`,
 `kubernetes cluster.local in-addr.arpa ip6.arpa { pods insecure; fallthrough
 in-addr.arpa ip6.arpa; ttl 30 }`, `prometheus :9153`, `forward`, `cache 30`,
 `loop`, `reload` and `loadbalance`. The `kube-dns` Service is `10.96.0.10`.
-The manifest defines no liveness or readiness probes. This matters for now
-because of #6: after a reload, `/health` stays at 503 when `lameduck` is set.
+The manifest defines no liveness or readiness probes. Since #6, `/health`
+stays 200 across reloads (lameduck only applies at process exit), so a
+liveness probe on `:8080/health` is safe; `/ready` is the one to drain on.
 
 stormcoredns forwards to MicroDNS and does not replace it. MicroDNS stays
 authoritative for the site zones and owns DHCP and IPAM.
@@ -51,7 +52,7 @@ authoritative for the site zones and owns DHCP and IPAM.
 | port | what | notes |
 |---|---|---|
 | 53/udp, 53/tcp | DNS | server-block key `.:53`, dual stack when IPv6 is available, also after a reload |
-| 8080 | `/health` (`health`) | 200 `OK`. During lameduck it returns 503 while DNS keeps answering |
+| 8080 | `/health` (`health`) | 200 `OK` while the process runs, including the lameduck period at exit (as in CoreDNS); `/ready` is 503 then |
 | 8181 | `/ready` (`ready`) | 200 once the kubernetes watches have synced, otherwise 503 with the plugin name |
 | 9153 | `/metrics` (`prometheus :9153`) | `coredns_*` names and labels, no `process_*` metrics. A bare `prometheus` binds `localhost:9153` |
 

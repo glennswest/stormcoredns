@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#6)
+Checked against CoreDNS v1.12.4 `plugin/health` and `plugin/ready`.
+- **fix:** `health` lameduck runs only at process exit (a new final-shutdown hook kind, CoreDNS's `OnFinalShutdown`), never on a reload. Before, every reload ran the old instance's lameduck. That set `/health` to 503 for good, so a liveness probe would kill the pod, and it delayed each reload by the lameduck period.
+- **fix:** As in CoreDNS, `/health` answers 200 for as long as the process runs, including during lameduck. `/ready` answers 503 from the start of the final shutdown.
+- **docs:** plugins.md, architecture.md (also the SHA-512 reload hash from #15), integration.md (a liveness probe on `/health` is now safe), README and the presentation.
+
 ### 2026-10-07 (#17)
 - **docs:** presentation: stormcos#79 is done (closed 2026-09-30). Checked in stormcos: `deploy/build-goldens.sh` and `deploy/manifests/80-coredns.yaml` say there is no upstream CoreDNS fallback, and the manifest notes #6 before any liveness probe. stormcentral#35 is still open and stays listed.
 

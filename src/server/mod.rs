@@ -219,6 +219,11 @@ impl Server {
                     .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_else(|| "unknown".into());
                 tracing::error!("{}: panic serving {}: {}", self.label, req.name_uncached(), what);
+                if entry.config.values.contains_key(crate::plugins::debug::KEY) {
+                    // `debug`: panics are not recovered, as in CoreDNS (Go exits 2 on a panic)
+                    tracing::error!("{}: debug is on, exiting on the panic", self.label);
+                    std::process::exit(2);
+                }
                 Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::ServFail)])
             }
         }

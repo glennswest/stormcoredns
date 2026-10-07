@@ -174,8 +174,9 @@ Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache
 
 ### In progress — #12 view metadata() (2026-10-07)
 CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first metadata plugin's `Collect` runs before that config's view filters, so `metadata()` sees the providers' labels.
-- [ ] `metadata` keeps a collector on its `ServerConfig`; `Server::lookup` collects before each filter; the plugin's own `serve_dns` only passes on
-- [ ] unit test (view filter on a provider label), live check, docs, CHANGELOG; sc-build (stormcentral#505); stage `coredns`
+- [x] `metadata` keeps a collector on its `ServerConfig`; `Server::lookup` collects before each filter; the plugin's own `serve_dns` only passes on
+- [x] unit test `server::tests::view_filters_see_collected_metadata` (real view expression + collector + `Server::lookup`; a live check needs a geoip DB, which dev lacks), docs, CHANGELOG — pushed through 8cc4fc8
+- [ ] **Blocked:** sc-build at 8cc4fc8 (the combined `tmp/job15.sh`, which also verifies #10, #14, #15): dev.g8.lo refused ssh on :22 twice (exit 255, stormcentral#97). Then stage `coredns`, close #10, #12, #14, #15
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

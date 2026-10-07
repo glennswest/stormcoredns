@@ -180,12 +180,13 @@ CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first 
 
 ### In progress — #11 secondary timers (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.
-- [ ] initial transfer retried with backoff 250ms→10s until it succeeds
-- [ ] after a failed refresh check/transfer: retry every SOA `retry`; once `expire` has passed since the last good check the zone is expired → SERVFAIL (and no AXFR out) until a transfer succeeds
-- [ ] serial compare per RFC 1982 (`less`, as upstream); the SOA check goes over TCP like upstream
-- [ ] refresh tasks stop on shutdown/reload (cancellation token); same for `loadbalance weighted`'s reload task
-- [ ] NOTIFY only from a primary's IP (documented)
-- [ ] tests (serial arithmetic, a fake primary driving refresh/retry/expire), docs, CHANGELOG; sc-build; stage `coredns`
+- [x] initial transfer retried with backoff 250ms→10s until it succeeds
+- [x] after a failed refresh check/transfer: retry every SOA `retry`; once `expire` has passed since the last good check the zone is expired → SERVFAIL (and no AXFR out) until a transfer succeeds
+- [x] serial compare per RFC 1982 (`less`, as upstream); the SOA check goes over TCP like upstream
+- [x] refresh tasks stop on shutdown/reload (cancellation token); same for `loadbalance weighted`'s reload task
+- [x] NOTIFY only from a primary's IP (documented)
+- [x] tests (`serial_arithmetic`; `refresh_retry_expire` against a fake TCP primary: backoff, NOTIFY refresh, no downgrade, expiry → SERVFAIL/no AXFR out, recovery, shutdown), docs, CHANGELOG — pushed through 62509ef
+- [ ] **Blocked:** sc-build (combined `tmp/job15.sh`, also for #10/#12/#14/#15): dev.g8.lo unreachable (no route to host / refused, stormcentral#97). Then stage `coredns`, close #10, #11, #12, #14, #15
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

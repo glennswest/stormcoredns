@@ -7,8 +7,10 @@
 //!     require all|none|[QTYPE...]
 //! }
 //! ```
-//! KEY is base64 (HMAC-SHA256 is assumed for `secret`; `secrets` files
-//! are BIND `key` statements with an `algorithm`).
+//! KEY is base64. A `secret` key works with whatever algorithm the client
+//! signs with, as in CoreDNS; `secrets` files are BIND `key` statements
+//! with an `algorithm`. hickory 0.24 computes HMAC-SHA256/384/512 only, so
+//! MD5, SHA1 and SHA224 get BADKEY; AXFR replies are not signed.
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use anyhow::{anyhow, Result};
@@ -25,7 +27,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct Secret {
     pub name: Name,
-    pub algorithm: TsigAlgorithm,
+    /// `None` for `secret NAME KEY`: the request's algorithm is used, as in CoreDNS
+    pub algorithm: Option<TsigAlgorithm>,
     pub key: Vec<u8>,
 }
 
@@ -74,7 +77,7 @@ pub fn parse_secrets_file(text: &str) -> Result<Vec<Secret>> {
             }
         }
         if let Some(key) = secret {
-            out.push(Secret { name: Name::from_ascii(crate::dnsutil::fqdn(&name))?, algorithm: alg, key });
+            out.push(Secret { name: Name::from_ascii(crate::dnsutil::fqdn(&name))?, algorithm: Some(alg), key });
         }
         rest = &after[close + 1..];
     }
@@ -111,9 +114,10 @@ impl Tsig {
 
     /// Sign `m` as the response to a request whose MAC was `req_mac`.
     fn sign_response(&self, req: &Request, secret: &Secret, req_mac: &[u8], m: &mut Message) -> Result<()> {
-        let signer = TSigner::new(secret.key.clone(), secret.algorithm.clone(), secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
+        let alg = secret.algorithm.clone().unwrap_or(TsigAlgorithm::HmacSha256);
+        let signer = TSigner::new(secret.key.clone(), alg.clone(), secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let pre = TSIG::new(secret.algorithm.clone(), now, FUDGE, Vec::new(), req.msg.id(), 0, Vec::new());
+        let pre = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.id(), 0, Vec::new());
         let tbs = hickory_proto::rr::dnssec::rdata::tsig::message_tbs(Some(req_mac), m, &pre, &secret.name).map_err(|e| anyhow!("{}", e))?;
         let mac = signer.sign(&tbs).map_err(|e| anyhow!("{}", e))?;
         let t = pre.set_mac(mac);
@@ -144,13 +148,18 @@ impl Handler for Tsig {
             }
             return next.serve(req).await;
         };
-        let Some(secret) = self.secrets.get(&keyname).cloned() else {
+        let Some(mut secret) = self.secrets.get(&keyname).cloned() else {
             return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY)));
         };
+        match &secret.algorithm {
+            None => secret.algorithm = Some(alg.clone()),
+            Some(a) if *a != alg => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY))),
+            Some(_) => {}
+        }
         let Some(raw) = req.raw.clone() else {
             return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADSIG)));
         };
-        let signer = match TSigner::new(secret.key.clone(), secret.algorithm.clone(), secret.name.clone(), FUDGE) {
+        let signer = match TSigner::new(secret.key.clone(), alg.clone(), secret.name.clone(), FUDGE) {
             Ok(s) => s,
             Err(_) => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY))),
         };
@@ -197,7 +206,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     }
                     let name = crate::dnsutil::fqdn(&a[0]);
                     let key = base64::engine::general_purpose::STANDARD.decode(a[1].as_bytes()).map_err(|e| c.errf(format!("bad secret for {}: {}", a[0], e)))?;
-                    secrets.insert(name.clone(), Secret { name: Name::from_ascii(&name).map_err(|e| c.errf(e))?, algorithm: TsigAlgorithm::HmacSha256, key });
+                    secrets.insert(name.clone(), Secret { name: Name::from_ascii(&name).map_err(|e| c.errf(e))?, algorithm: None, key });
                 }
                 "secrets" => {
                     let a = c.remaining_args();

@@ -270,7 +270,6 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 |---|---|
 | #6 | after any reload, `/health` stays at 503, so a liveness probe would restart the pod |
 | #7 | one failed reload stops automatic reloads until SIGHUP |
-| #8 | after a reload, `:53` listens on IPv4 only |
 
 Also open: #21–#24
 CoreDNS differences, #20 signed zone files, #5 tests.

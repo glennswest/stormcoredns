@@ -85,11 +85,12 @@ expression works, and the chain sees the same labels.
 
 Listeners bind with `SO_REUSEPORT` (UDP sockets also get 4 MiB buffers;
 IPv6 sockets are dual-stack), so a reload starts the new instance before
-the old one stops — but see #8: `:port` is resolved by probe-binding
-`[::]:port`, which fails while the old instance holds it, so the new
-listener is IPv4-only. Stream transports pipeline: each query is answered as
-it completes, writes are serialised through a channel; idle 10 s, read 2 s,
-write 2 s unless `timeouts` says otherwise. AXFR replies are built in memory
+the old one stops. `:port` binds `[::]:port` (dual stack) whenever the host
+can open IPv6 sockets (probed once on `[::]:0`), else `0.0.0.0:port`; the
+real port is never probe-bound, since the old instance holds it during a
+reload (#8). Stream transports pipeline: each query is answered as
+it completes, writes are serialised through a channel; idle 10 s, read 3 s,
+write 5 s (CoreDNS's defaults) unless `timeouts` says otherwise. AXFR replies are built in memory
 and written as several messages.
 
 Before the chain: malformed → FORMERR (or nothing if the ID is unreadable),

@@ -50,7 +50,7 @@ authoritative for the site zones and owns DHCP and IPAM.
 
 | port | what | notes |
 |---|---|---|
-| 53/udp, 53/tcp | DNS | server-block key `.:53`, dual stack when IPv6 is available (#8: IPv4-only after a reload) |
+| 53/udp, 53/tcp | DNS | server-block key `.:53`, dual stack when IPv6 is available, also after a reload |
 | 8080 | `/health` (`health`) | 200 `OK`. During lameduck it returns 503 while DNS keeps answering |
 | 8181 | `/ready` (`ready`) | 200 once the kubernetes watches have synced, otherwise 503 with the plugin name |
 | 9153 | `/metrics` (`prometheus :9153`) | `coredns_*` names and labels, no `process_*` metrics. A bare `prometheus` binds `localhost:9153` |

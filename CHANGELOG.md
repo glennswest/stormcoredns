@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#8)
+- **fix:** A `:port` listener is dual stack (`[::]:port`) whenever the host can open IPv6 sockets, probed once on `[::]:0`. Before, the choice came from probe-binding the real port without SO_REUSEPORT. That failed while the old instance held the port during a reload (or when a privileged port could not be bound), so after any reload the listener was IPv4-only.
+- **docs:** architecture.md (also the 3s/5s stream timeout defaults from #15), integration.md, README and the presentation.
+
 ### 2026-10-07 (#11)
 Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.
 - **fix:** `secondary` honours the SOA timers. After a failed check or transfer it retries every `retry`, not after a full `refresh`. Once `expire` passes without a good check, the zone answers SERVFAIL and is not transferred out until a transfer succeeds. Before, a zone was served forever after its primaries died.

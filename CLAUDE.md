@@ -189,8 +189,9 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 - [ ] **Blocked:** sc-build (combined `tmp/job15.sh`, also for #10/#12/#14/#15): dev.g8.lo unreachable (no route to host / refused, stormcentral#97). Then stage `coredns`, close #10, #11, #12, #14, #15
 
 ### In progress — #8 `:port` IPv4-only after a reload (2026-10-07)
-- [ ] `resolve_bind`: dual stack when IPv6 is usable (probe `[::]:0` once, cached), not by binding the real port (held by the old instance during a reload, or privileged)
-- [ ] test: with the port held by another SO_REUSEPORT listener, `:port` still resolves to `[::]:port`; docs, CHANGELOG; sc-build (stormcentral#97/#505); stage `coredns`
+- [x] `resolve_bind`: dual stack when IPv6 is usable (probe `[::]:0` once, cached), not by binding the real port (held by the old instance during a reload, or privileged)
+- [x] test `port_held_by_another_listener_stays_dual_stack`, docs, CHANGELOG — pushed through 72c1180
+- [ ] **Blocked:** sc-build of `tmp/job_all.sh` (= `job15.sh` + `live8.sh`: v4/v6 queries before and after SIGHUP and a Corefile-edit reload) — dev.g8.lo: no route to host (stormcentral#97). One passing run verifies #8, #10, #11, #12, #14, #15; then stage `coredns` and close them
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

@@ -96,18 +96,25 @@ pub fn server_config(cert: &Path, key: &Path, ca: Option<&Path>, client_auth: Cl
     let certs = load_certs(cert)?;
     let key = load_key(key)?;
     let builder = rustls::ServerConfig::builder();
-    let builder = match (ca, client_auth) {
-        (_, ClientAuth::Nocert) | (None, _) => builder.with_no_client_auth(),
-        (Some(ca), auth) => {
-            let mut roots = rustls::RootCertStore::empty();
-            for c in load_certs(ca)? {
-                roots.add(c)?;
-            }
-            let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots));
-            let verifier = match auth {
-                ClientAuth::Request | ClientAuth::Verify => verifier.allow_unauthenticated().build()?,
-                _ => verifier.build()?,
+    // as Go's tls.ClientAuthType: request/require take any certificate
+    // unverified; the verify modes check against the CA, or the system
+    // roots when there is none
+    let builder = match client_auth {
+        ClientAuth::Nocert => builder.with_no_client_auth(),
+        ClientAuth::Request | ClientAuth::Require => builder.with_client_cert_verifier(Arc::new(AnyClientCert { mandatory: client_auth == ClientAuth::Require })),
+        ClientAuth::Verify | ClientAuth::RequireAndVerify => {
+            let roots = match ca {
+                Some(ca) => {
+                    let mut roots = rustls::RootCertStore::empty();
+                    for c in load_certs(ca)? {
+                        roots.add(c)?;
+                    }
+                    roots
+                }
+                None => system_roots(),
             };
+            let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots));
+            let verifier = if client_auth == ClientAuth::Verify { verifier.allow_unauthenticated().build()? } else { verifier.build()? };
             builder.with_client_cert_verifier(verifier)
         }
     };
@@ -125,14 +132,7 @@ pub fn client_config(ca: Option<&Path>, client_cert: Option<(&Path, &Path)>, ins
                 roots.add(c)?;
             }
         }
-        None => {
-            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            if let Ok(native) = rustls_native_certs::load_native_certs().certs.into_iter().map(Ok::<_, anyhow::Error>).collect::<Result<Vec<_>>>() {
-                for c in native {
-                    let _ = roots.add(c);
-                }
-            }
-        }
+        None => roots = system_roots(),
     }
     let builder = rustls::ClientConfig::builder();
     let builder = if insecure {
@@ -178,6 +178,62 @@ impl rustls::client::danger::ServerCertVerifier for NoVerify {
         _dss: &rustls::DigitallySignedStruct,
     ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider().signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// webpki's roots plus the host's native ones.
+fn system_roots() -> rustls::RootCertStore {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    for c in rustls_native_certs::load_native_certs().certs {
+        let _ = roots.add(c);
+    }
+    roots
+}
+
+/// `client_auth request|require`: ask for a client certificate and take
+/// any, without verifying it (the handshake signature is still checked).
+#[derive(Debug)]
+struct AnyClientCert {
+    mandatory: bool,
+}
+
+impl rustls::server::danger::ClientCertVerifier for AnyClientCert {
+    fn offer_client_auth(&self) -> bool {
+        true
+    }
+    fn client_auth_mandatory(&self) -> bool {
+        self.mandatory
+    }
+    fn root_hint_subjects(&self) -> &[rustls::DistinguishedName] {
+        &[]
+    }
+    fn verify_client_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::server::danger::ClientCertVerified, rustls::Error> {
+        Ok(rustls::server::danger::ClientCertVerified::assertion())
+    }
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &rustls::crypto::ring::default_provider().signature_verification_algorithms)
+    }
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &rustls::crypto::ring::default_provider().signature_verification_algorithms)
     }
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         rustls::crypto::ring::default_provider().signature_verification_algorithms.supported_schemes()

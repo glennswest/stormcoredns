@@ -36,9 +36,6 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                 o => return Err(c.errf(format!("unknown property '{}'", o))),
             }
         }
-        if ca.is_none() && client_auth != ClientAuth::Nocert {
-            return Err(c.errf("client_auth requires a CA certificate"));
-        }
         let cfg = server_config(&cert, &key, ca.as_deref(), client_auth).map_err(|e| c.errf(e))?;
         c.config.tls = Some(cfg);
         c.config.values.insert("tls/client_auth".into(), format!("{:?}", client_auth));

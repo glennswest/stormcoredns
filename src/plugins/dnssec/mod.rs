@@ -160,7 +160,12 @@ impl Dnssec {
             v
         };
         // next name: \000.<qname>, or <first label>\000.<rest> for a delegation
-        let mut next = Name::from_ascii("\\000").ok().and_then(|n| n.append_domain(&qname).ok()).unwrap_or_else(|| qname.clone());
+        let mut next = Name::from_labels(std::iter::once(vec![0u8]).chain(qname.iter().map(|l| l.to_vec())))
+            .map(|mut n| {
+                n.set_fqdn(true);
+                n
+            })
+            .unwrap_or_else(|_| qname.clone());
         let types = if req.name_uncached() == zone {
             filter(apex_bitmap())
         } else if kind == RespType::Delegation || qtype == RecordType::DS {

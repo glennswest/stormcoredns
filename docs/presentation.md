@@ -122,7 +122,7 @@ implemented (`-plugins` lists them):
 |---|---|
 | cluster DNS | `kubernetes` `k8s_external` `autopath` `forward` `cache` `loop` `loadbalance` `reload` `health` `ready` `prometheus` `errors` |
 | queries | `rewrite` `template`* `hosts` `acl` `view` `cancel` `bufsize` `dns64` `any` `local` `minimal` `header` `nsid` `chaos` `whoami` `erratic` |
-| authoritative | `file`* `auto` `secondary`* `transfer` `dnssec`* `sign`* `tsig`* |
+| authoritative | `file`* `auto` `secondary` `transfer` `dnssec`* `sign`* `tsig`* |
 | server | `bind` `tls` `timeouts` `multisocket` `root` `debug` `metadata` `geoip` `on` `log` `dnstap`* `trace`* `pprof`* |
 | backends | `etcd` `grpc` `route53`* `azure` `clouddns` |
 
@@ -272,5 +272,5 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 | #7 | one failed reload stops automatic reloads until SIGHUP |
 | #8 | after a reload, `:53` listens on IPv4 only |
 
-Also open: #11 secondary, #21–#24
+Also open: #21–#24
 CoreDNS differences, #20 signed zone files, #5 tests.

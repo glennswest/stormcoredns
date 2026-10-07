@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#11)
+Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.
+- **fix:** `secondary` honours the SOA timers. After a failed check or transfer it retries every `retry`, not after a full `refresh`. Once `expire` passes without a good check, the zone answers SERVFAIL and is not transferred out until a transfer succeeds. Before, a zone was served forever after its primaries died.
+- **fix:** `secondary` compares serials per RFC 1982, so a primary with an older serial no longer causes a downgrade. An expired zone is re-transferred whatever the serial.
+- **fix:** `secondary` retries the first transfer with backoff (250 ms doubling to 10 s), and asks for the primary's SOA over TCP, as CoreDNS does.
+- **fix:** The `secondary` refresh tasks and the `loadbalance weighted` reload task stop on shutdown, so a Corefile reload no longer leaks them.
+- **docs:** plugins.md (secondary, loadbalance; NOTIFY only from a primary's IP, no TSIG), README and the presentation. README no longer lists #9 as open.
+
 ### 2026-10-07 (#12)
 - **fix:** `view` `metadata('label')` works. As in CoreDNS (`core/dnsserver/server.go`), the server has a config's `metadata` plugin collect every provider's labels into the request before that config's view filter runs. The plugin's own handler only passes the query on, and the chain sees the same labels. Before, metadata was collected inside the chain, after the view was chosen, so `metadata()` was always empty.
 - **docs:** plugins.md (metadata, view), architecture.md, README and the presentation.

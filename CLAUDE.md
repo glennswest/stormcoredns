@@ -164,12 +164,13 @@ Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup h
 
 ### In progress — #10 dnssec black lies and signature cache (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache.go`).
-- [ ] black lies as upstream: NXDOMAIN and NODATA bitmaps drop the queried type (unless NSEC); delegation bitmap for referrals and DS; LOC/CERT/HIP/SPF in the bitmaps; NSEC TTL from the SOA; a qtype NSEC query gets the NSEC as the answer
-- [ ] negatives signed only when the authority is exactly one SOA (as upstream)
-- [ ] referrals: sign DS only, or a delegation NSEC; the NS set and glue are not signed
-- [ ] positive answers: additional section signed too
-- [ ] signature cache: an entry whose RRSIG expires within 2 days is re-signed
-- [ ] tests, docs, CHANGELOG; sc-build (stormcentral#505); stage `coredns`
+- [x] black lies as upstream: NXDOMAIN and NODATA bitmaps drop the queried type (unless NSEC); delegation bitmap for referrals and DS; LOC/CERT/HIP/SPF in the bitmaps; NSEC TTL from the SOA; a qtype NSEC query gets the NSEC as the answer
+- [x] negatives signed only when the authority is exactly one SOA (as upstream)
+- [x] referrals: sign DS only, or a delegation NSEC; the NS set and glue are not signed
+- [x] positive answers: additional section signed too
+- [x] signature cache: an entry whose RRSIG expires within 2 days is re-signed
+- [x] tests, docs, CHANGELOG (through 811f088)
+- [ ] **Verification (also for #14 and #15):** the combined job (`tmp/job15.sh`) at 28a1490 (#25 closed) ran: workspace builds with no warnings, 81/82 tests pass, every #15 live check as intended (whoami SRV, local, hosts SERVFAIL/NODATA, acl EDE 15/17, template SERVFAIL, erratic SERVFAIL + 6-record AXFR, process_* + reload sha512, reload on edit). The one failure (black-lie NSEC next name lost `\000`, also before #10) is fixed in 811f088; the rerun got no slot twice (exit 75, stormcentral#505). Next: rerun, then stage `coredns`, close #10, #14, #15
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

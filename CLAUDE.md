@@ -154,12 +154,13 @@ Split into their own issues if large: Go template functions, dnstap FORWARDER_*,
 
 ### In progress — #14 kubernetes/cloud readiness and discovery (2026-10-07)
 Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup hook waits for the API to sync, up to `startup_timeout` (default 5s), then serves what it has.
-- [ ] kubernetes: wait for sync in the startup hook, `startup_timeout DURATION` (default 5s), as CoreDNS
-- [ ] kubernetes: EndpointSlice discovery with a timeout; transient errors retry in the background instead of locking in core Endpoints (CoreDNS 1.12 is slices-only; our Endpoints fallback stays as an extension for rustkube)
-- [ ] kubernetes: `set_slice` keeps an IP→service index entry while another slice of the service still has the IP
-- [ ] kubernetes: `endpoint https://` without `tls` verifies against the system roots (as CoreDNS) instead of skipping verification; `tls` without `endpoint` warns
-- [ ] route53/azure/clouddns: ready only once every zone has been fetched successfully
-- [ ] tests, docs, CHANGELOG; sc-build (build slots: stormcentral#505); stage `coredns`
+- [x] kubernetes: wait for sync in the startup hook, `startup_timeout DURATION` (default 5s), as CoreDNS
+- [x] kubernetes: EndpointSlice discovery with a timeout; transient errors retry in the background instead of locking in core Endpoints (CoreDNS 1.12 is slices-only; our Endpoints fallback stays as an extension for rustkube)
+- [x] kubernetes: `set_slice` keeps an IP→service index entry while another slice of the service still has the IP
+- [x] kubernetes: `endpoint https://` without `tls` verifies against the system roots (as CoreDNS) instead of skipping verification; `tls` without `endpoint` warns
+- [x] route53/azure/clouddns: ready only once every zone has been fetched successfully
+- [x] tests (slice index, discovery against a fake API server, cloud readiness), docs, CHANGELOG — pushed through 01000ea
+- [ ] **Blocked:** sc-build. The combined #15+#14 job (`tmp/job15.sh`: full build, tests, #15 live check) at 01000ea got no slot (exit 75, stormcentral#505). Then: fix what fails, stage `coredns`, close #14 and #15
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

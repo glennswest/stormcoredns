@@ -141,6 +141,15 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] sc-build green at c35d48d (68+6 tests, no warnings) + live check on dev (closest-encloser NXDOMAIN, DNAME chain, YXDOMAIN, per-stanza reload); golden `golden-coredns-f17e28c24280` (stormcos#348)
 - [x] Found: hickory 0.24's zone parser refuses RRSIG/NSEC/NSEC3/DNSKEY, so signed zone files (and `sign`'s output) don't load in `file` — filed #20
 
+### In progress — #15 CoreDNS 1.12 divergences (2026-10-06)
+Checked against CoreDNS v1.12.4 source (cloned into `tmp/coredns-1.12`, not committed).
+Fix here, item by item (commit each group):
+- [ ] defaults: `bufsize` 1232; `cache` SERVFAIL 5 s; `etcd` TTL 300 / priority 10
+- [ ] syntax: `clouddns ZONE:PROJECT:HOSTED_ZONE`; `forward next` hands the reply to a following `forward` (upstream has no `failover`; ours stays as an extension)
+- [ ] behaviour: acl falls through to the next rule; hosts NXDOMAIN/fallthrough; template regex miss; dns64 leaves NXDOMAIN alone; whoami SRV; reload hash sha512; `on` waits without `&`; kubernetes in-cluster first; azure private casing; erratic AXFR; local zones; others as found
+Split into their own issues if large: Go template functions, dnstap FORWARDER_*, route53 IMDS/IRSA/profile, process_* metrics, rustls client_auth, AXFR over DoH/DoQ/gRPC
+- [ ] docs (plugins.md, README, presentation), CHANGELOG; sc-build; stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
@@ -150,5 +159,4 @@ Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #10 dnssec bogus NXDOMAIN NSEC, RRSIG cache expiry
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #12 view metadata()
-- [ ] #15 CoreDNS divergences (verify each against 1.12 first)
 - [ ] #20 signed zone files do not load (hickory parser)

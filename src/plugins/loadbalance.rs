@@ -184,12 +184,24 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                 if !reload.is_zero() {
                     let w = weights.clone();
                     let p = path.clone();
+                    // stopped on shutdown, so a reload does not leave the old task running
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    let stop = cancel.clone();
+                    c.on_shutdown(Box::new(move || {
+                        Box::pin(async move {
+                            stop.cancel();
+                            Ok(())
+                        })
+                    }));
                     c.on_startup(Box::new(move || {
                         Box::pin(async move {
                             tokio::spawn(async move {
                                 let mut last = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
                                 loop {
-                                    tokio::time::sleep(reload).await;
+                                    tokio::select! {
+                                        _ = cancel.cancelled() => return,
+                                        _ = tokio::time::sleep(reload) => {}
+                                    }
                                     let now = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
                                     if now != last {
                                         last = now;

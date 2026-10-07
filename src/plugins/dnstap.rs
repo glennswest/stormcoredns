@@ -6,7 +6,8 @@
 use crate::plugin::{Controller, DnsResult, Handler, Next, Proto, Reply, Request};
 use async_trait::async_trait;
 use prost::Message as ProstMessage;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -99,8 +100,9 @@ fn ip_bytes(ip: IpAddr) -> Vec<u8> {
 #[derive(Clone)]
 pub enum Endpoint {
     Unix(String),
-    Tcp(SocketAddr),
-    Tls(SocketAddr, bool),
+    /// host:port; a host name is resolved on every connect, as in CoreDNS
+    Tcp(String),
+    Tls(String, bool),
 }
 
 async fn control(w: &mut (dyn tokio::io::AsyncWrite + Unpin + Send), ctype: u32, with_content: bool) -> std::io::Result<()> {
@@ -158,17 +160,24 @@ async fn writer(endpoint: Endpoint, mut rx: mpsc::Receiver<Vec<u8>>) {
                 Ok(s) => session(s, &mut rx).await,
                 Err(e) => Err(e),
             },
-            Endpoint::Tcp(a) => match tokio::net::TcpStream::connect(a).await {
+            Endpoint::Tcp(a) => match tokio::net::TcpStream::connect(a.as_str()).await {
                 Ok(s) => session(s, &mut rx).await,
                 Err(e) => Err(e),
             },
-            Endpoint::Tls(a, skipverify) => match tokio::net::TcpStream::connect(a).await {
+            Endpoint::Tls(a, skipverify) => match tokio::net::TcpStream::connect(a.as_str()).await {
                 Ok(s) => match crate::server::tls::client_config(None, None, *skipverify) {
                     Ok(cfg) => {
                         let conn = tokio_rustls::TlsConnector::from(cfg);
-                        let sni = rustls::pki_types::ServerName::IpAddress(a.ip().into());
-                        match conn.connect(sni, s).await {
-                            Ok(t) => session(t, &mut rx).await,
+                        let host = a.rsplit_once(':').map(|(h, _)| h).unwrap_or(a).trim_start_matches('[').trim_end_matches(']');
+                        let sni = match host.parse::<IpAddr>() {
+                            Ok(ip) => Ok(rustls::pki_types::ServerName::IpAddress(ip.into())),
+                            Err(_) => rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string())),
+                        };
+                        match sni {
+                            Ok(sni) => match conn.connect(sni, s).await {
+                                Ok(t) => session(t, &mut rx).await,
+                                Err(e) => Err(e),
+                            },
                             Err(e) => Err(e),
                         }
                     }
@@ -192,6 +201,8 @@ async fn writer(endpoint: Endpoint, mut rx: mpsc::Receiver<Vec<u8>>) {
 
 pub struct DnstapHandler {
     tx: mpsc::Sender<Vec<u8>>,
+    /// messages lost to a full queue, logged and reset every second (as in CoreDNS)
+    dropped: Arc<AtomicU64>,
     full: bool,
     identity: Vec<u8>,
     version: Vec<u8>,
@@ -203,7 +214,9 @@ impl DnstapHandler {
         let d = Dnstap { identity: Some(self.identity.clone()), version: Some(self.version.clone()), extra: self.extra.clone(), message: Some(std::mem::take(&mut m)), r#type: TYPE_MESSAGE };
         let mut buf = Vec::with_capacity(d.encoded_len());
         if d.encode(&mut buf).is_ok() {
-            let _ = self.tx.try_send(buf);
+            if self.tx.try_send(buf).is_err() {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -302,17 +315,28 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             }
         }
         let endpoint = if let Some(rest) = socket.strip_prefix("tcp://") {
-            Endpoint::Tcp(crate::dnsutil::host_port(rest, 6000)?.parse().map_err(|_| c.errf(format!("bad tcp endpoint {}", socket)))?)
+            Endpoint::Tcp(crate::dnsutil::host_port(rest, 6000).map_err(|e| c.errf(format!("bad tcp endpoint {}: {}", socket, e)))?)
         } else if let Some(rest) = socket.strip_prefix("tls://") {
-            Endpoint::Tls(crate::dnsutil::host_port(rest, 6000)?.parse().map_err(|_| c.errf(format!("bad tls endpoint {}", socket)))?, skipverify)
+            Endpoint::Tls(crate::dnsutil::host_port(rest, 6000).map_err(|e| c.errf(format!("bad tls endpoint {}: {}", socket, e)))?, skipverify)
         } else {
             Endpoint::Unix(socket.strip_prefix("unix://").unwrap_or(&socket).to_string())
         };
         let (tx, rx) = mpsc::channel::<Vec<u8>>(10000);
-        c.add_plugin(Arc::new(DnstapHandler { tx, full, identity, version, extra }));
+        let dropped = Arc::new(AtomicU64::new(0));
+        c.add_plugin(Arc::new(DnstapHandler { tx, dropped: dropped.clone(), full, identity, version, extra }));
         c.on_startup(Box::new(move || {
             Box::pin(async move {
-                tokio::spawn(writer(endpoint, rx));
+                let w = tokio::spawn(writer(endpoint, rx));
+                tokio::spawn(async move {
+                    let mut tick = tokio::time::interval(Duration::from_secs(1));
+                    while !w.is_finished() {
+                        tick.tick().await;
+                        let n = dropped.swap(0, Ordering::Relaxed);
+                        if n > 0 {
+                            tracing::warn!("plugin/dnstap: Dropped dnstap messages: {}", n);
+                        }
+                    }
+                });
                 Ok(())
             })
         }));

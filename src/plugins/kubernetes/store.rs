@@ -201,6 +201,11 @@ impl Store {
         if let Some(old) = slices.remove(&slice) {
             for e in old {
                 for ip in e.ips {
+                    // another slice of this service (or the new one) may still have the IP
+                    let still = slices.values().chain(std::iter::once(&eps)).flatten().any(|o| o.ips.contains(&ip));
+                    if still {
+                        continue;
+                    }
                     if let Some(set) = by_ip.get_mut(&ip) {
                         set.remove(&svc_key);
                         if set.is_empty() {
@@ -504,6 +509,18 @@ impl Store {
     }
 }
 
+/// Does the API server serve `discovery.k8s.io/v1` endpointslices? A
+/// definite answer (the list, or 404 for a missing group) is Ok; anything
+/// else (timeout, connection error, 5xx) is Err, to be retried.
+async fn discover_slices(client: &Client) -> Result<bool> {
+    match tokio::time::timeout(std::time::Duration::from_secs(5), client.list_api_group_resources("discovery.k8s.io/v1")).await {
+        Err(_) => Err(anyhow::anyhow!("timed out after 5s")),
+        Ok(Ok(l)) => Ok(l.resources.iter().any(|r| r.name == "endpointslices")),
+        Ok(Err(kube::Error::Api(e))) if e.code == 404 => Ok(false),
+        Ok(Err(e)) => Err(e.into()),
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WatchOptions {
     pub namespaces: Vec<String>,
@@ -513,8 +530,9 @@ pub struct WatchOptions {
     pub watch_endpoints: bool,
 }
 
-/// Start all watchers. Uses EndpointSlices when the discovery API exists,
-/// core Endpoints otherwise (older clusters, minimal API servers).
+/// Start all watchers. Uses EndpointSlices when the discovery API serves
+/// them, core Endpoints otherwise (older clusters, minimal API servers such
+/// as rustkube; CoreDNS 1.12 itself only watches EndpointSlices).
 pub async fn start(client: Client, store: Arc<Store>, opts: WatchOptions) -> Result<()> {
     let mut cfg = watcher::Config::default();
     if let Some(l) = &opts.label_selector {
@@ -554,37 +572,52 @@ pub async fn start(client: Client, store: Arc<Store>, opts: WatchOptions) -> Res
             "namespaces",
         ));
     }
-    // endpoints
+    // endpoints: decided by discovery, in the background so a slow API
+    // server does not hold up startup; a transient discovery error retries
+    // instead of settling on core Endpoints for the life of the instance
     if opts.watch_endpoints {
-        let have_slices = client.list_api_group_resources("discovery.k8s.io/v1").await.map(|l| l.resources.iter().any(|r| r.name == "endpointslices")).unwrap_or(false);
-        if have_slices {
-            let (store, cfg) = (store.clone(), cfg.clone());
-            let api: Api<EndpointSlice> = Api::all(client.clone());
-            tokio::spawn(watch_loop(
-                api,
-                cfg,
-                store,
-                |s, o| s.apply_slice(o),
-                |s, o| s.delete_slice(o),
-                |s, seen| s.retain_slices(seen),
-                |s| &s.endpoints_synced,
-                "endpointslices",
-            ));
-        } else {
-            tracing::info!("plugin/kubernetes: discovery.k8s.io/v1 not available, watching core Endpoints");
-            let (store, cfg) = (store.clone(), cfg.clone());
-            let api: Api<Endpoints> = Api::all(client.clone());
-            tokio::spawn(watch_loop(
-                api,
-                cfg,
-                store,
-                |s, o| s.apply_endpoints(o),
-                |s, o| s.delete_endpoints(o),
-                |s, seen| s.retain_endpoints(seen),
-                |s| &s.endpoints_synced,
-                "endpoints",
-            ));
-        }
+        let (store, cfg, client) = (store.clone(), cfg.clone(), client.clone());
+        tokio::spawn(async move {
+            let mut backoff = std::time::Duration::from_secs(1);
+            let have_slices = loop {
+                match discover_slices(&client).await {
+                    Ok(v) => break v,
+                    Err(e) => {
+                        tracing::warn!("plugin/kubernetes: EndpointSlice discovery failed: {}; retrying in {:?}", e, backoff);
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
+                    }
+                }
+            };
+            if have_slices {
+                let api: Api<EndpointSlice> = Api::all(client);
+                watch_loop(
+                    api,
+                    cfg,
+                    store,
+                    |s, o| s.apply_slice(o),
+                    |s, o| s.delete_slice(o),
+                    |s, seen| s.retain_slices(seen),
+                    |s| &s.endpoints_synced,
+                    "endpointslices",
+                )
+                .await
+            } else {
+                tracing::info!("plugin/kubernetes: discovery.k8s.io/v1 has no endpointslices, watching core Endpoints");
+                let api: Api<Endpoints> = Api::all(client);
+                watch_loop(
+                    api,
+                    cfg,
+                    store,
+                    |s, o| s.apply_endpoints(o),
+                    |s, o| s.delete_endpoints(o),
+                    |s, seen| s.retain_endpoints(seen),
+                    |s| &s.endpoints_synced,
+                    "endpoints",
+                )
+                .await
+            }
+        });
     } else {
         store.endpoints_synced.store(true, Ordering::Relaxed);
     }
@@ -645,5 +678,33 @@ pub mod testing {
         store.pod_by_ip.write().insert(ip, key.clone());
         store.pods.write().insert(key.clone(), Arc::new(PodInfo { name: name.into(), namespace: ns.into(), ips: vec![ip] }));
         store.namespaces.write().insert(ns.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ep(ip: &str) -> Endpoint {
+        Endpoint { ips: vec![ip.parse().unwrap()], hostname: None, pod_name: None, ready: true, ports: vec![] }
+    }
+
+    #[test]
+    fn ip_index_survives_another_slice_dropping_the_ip() {
+        let s = Store::default();
+        let key: Key = ("ns".into(), "svc".into());
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        // the same IP in two slices of one service (e.g. while a slice is being replaced)
+        s.set_slice(key.clone(), "a".into(), vec![ep("10.0.0.1")]);
+        s.set_slice(key.clone(), "b".into(), vec![ep("10.0.0.1"), ep("10.0.0.2")]);
+        s.set_slice(key.clone(), "a".into(), Vec::new());
+        assert_eq!(s.services_by_endpoint_ip(ip), vec![key.clone()], "slice b still has the IP");
+        // updating a slice that keeps the IP keeps the entry
+        s.set_slice(key.clone(), "b".into(), vec![ep("10.0.0.1")]);
+        assert_eq!(s.services_by_endpoint_ip(ip), vec![key.clone()]);
+        assert!(s.services_by_endpoint_ip("10.0.0.2".parse().unwrap()).is_empty());
+        s.set_slice(key.clone(), "b".into(), Vec::new());
+        assert!(s.services_by_endpoint_ip(ip).is_empty());
+        assert!(s.endpoints("ns", "svc").is_empty());
     }
 }

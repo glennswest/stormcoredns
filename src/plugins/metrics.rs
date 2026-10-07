@@ -91,6 +91,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     Lazy::force(&vars::PANIC_COUNT);
     Lazy::force(&vars::PLUGIN_ENABLED);
     Lazy::force(&vars::BUILD_INFO);
+    vars::init_process_metrics();
     c.add_plugin(Arc::new(Metrics));
     c.once_per_server_block(|c| {
         ENDPOINTS.install(c, &addr, |req| async move {

@@ -118,3 +118,118 @@ pub fn gauge(name: &str, help: &str) -> IntGauge {
     register(Box::new(g.clone()));
     g
 }
+
+// ------------------------------------------------------- process metrics
+
+/// The `process_*` metrics of the Go client's process collector (the
+/// stock CoreDNS dashboard graphs them), read from `/proc/self` on each
+/// scrape. Linux only; elsewhere nothing is reported.
+pub struct ProcessCollector {
+    cpu: prometheus::Counter,
+    open_fds: prometheus::Gauge,
+    max_fds: prometheus::Gauge,
+    vsize: prometheus::Gauge,
+    vsize_max: prometheus::Gauge,
+    rss: prometheus::Gauge,
+    start: prometheus::Gauge,
+    descs: Vec<prometheus::core::Desc>,
+}
+
+impl ProcessCollector {
+    pub fn new() -> ProcessCollector {
+        let g = |n: &str, h: &str| prometheus::Gauge::new(n, h).unwrap();
+        let cpu = prometheus::Counter::new("process_cpu_seconds_total", "Total user and system CPU time spent in seconds.").unwrap();
+        let open_fds = g("process_open_fds", "Number of open file descriptors.");
+        let max_fds = g("process_max_fds", "Maximum number of open file descriptors.");
+        let vsize = g("process_virtual_memory_bytes", "Virtual memory size in bytes.");
+        let vsize_max = g("process_virtual_memory_max_bytes", "Maximum amount of virtual memory available in bytes.");
+        let rss = g("process_resident_memory_bytes", "Resident memory size in bytes.");
+        let start = g("process_start_time_seconds", "Start time of the process since unix epoch in seconds.");
+        let mut descs = Vec::new();
+        descs.extend(cpu.desc().into_iter().cloned());
+        for x in [&open_fds, &max_fds, &vsize, &vsize_max, &rss, &start] {
+            descs.extend(x.desc().into_iter().cloned());
+        }
+        ProcessCollector { cpu, open_fds, max_fds, vsize, vsize_max, rss, start, descs }
+    }
+
+    fn refresh(&self) -> Option<()> {
+        let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+        // fields after "(comm) ": state is field 3, so field N is f[N - 3]
+        let f: Vec<&str> = stat.get(stat.rfind(')')? + 2..)?.split_whitespace().collect();
+        let num = |i: usize| f.get(i - 3).and_then(|v| v.parse::<f64>().ok());
+        // SAFETY: sysconf has no preconditions
+        let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as f64;
+        let cpu = (num(14)? + num(15)?) / ticks;
+        let delta = cpu - self.cpu.get();
+        if delta > 0.0 {
+            self.cpu.inc_by(delta);
+        }
+        self.vsize.set(num(23)?);
+        self.rss.set(num(24)? * page);
+        let btime = std::fs::read_to_string("/proc/stat").ok()?.lines().find_map(|l| l.strip_prefix("btime ").and_then(|v| v.trim().parse::<f64>().ok()))?;
+        self.start.set(btime + num(22)? / ticks);
+        if let Ok(d) = std::fs::read_dir("/proc/self/fd") {
+            self.open_fds.set(d.count() as f64);
+        }
+        let limits = std::fs::read_to_string("/proc/self/limits").ok()?;
+        let soft = |prefix: &str| {
+            limits.lines().find(|l| l.starts_with(prefix)).and_then(|l| l[prefix.len()..].split_whitespace().next()).map(|v| v.parse::<f64>().unwrap_or(u64::MAX as f64))
+        };
+        if let Some(v) = soft("Max open files") {
+            self.max_fds.set(v);
+        }
+        if let Some(v) = soft("Max address space") {
+            self.vsize_max.set(v);
+        }
+        Some(())
+    }
+}
+
+impl Default for ProcessCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Collector for ProcessCollector {
+    fn desc(&self) -> Vec<&prometheus::core::Desc> {
+        self.descs.iter().collect()
+    }
+
+    fn collect(&self) -> Vec<prometheus::proto::MetricFamily> {
+        if self.refresh().is_none() {
+            return Vec::new();
+        }
+        let mut out = self.cpu.collect();
+        for x in [&self.open_fds, &self.max_fds, &self.vsize, &self.vsize_max, &self.rss, &self.start] {
+            out.extend(x.collect());
+        }
+        out
+    }
+}
+
+/// Register the process collector once.
+pub fn init_process_metrics() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| register(Box::new(ProcessCollector::new())));
+}
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+
+    #[test]
+    fn reads_proc_self() {
+        let p = ProcessCollector::new();
+        let fams = p.collect();
+        if cfg!(target_os = "linux") {
+            let names: Vec<&str> = fams.iter().map(|f| f.get_name()).collect();
+            for n in ["process_cpu_seconds_total", "process_open_fds", "process_max_fds", "process_resident_memory_bytes", "process_start_time_seconds", "process_virtual_memory_bytes"] {
+                assert!(names.contains(&n), "{} missing from {:?}", n, names);
+            }
+            assert!(p.rss.get() > 0.0 && p.open_fds.get() > 0.0 && p.start.get() > 1.6e9);
+        }
+    }
+}

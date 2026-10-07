@@ -178,10 +178,18 @@ CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first 
 - [x] unit test `server::tests::view_filters_see_collected_metadata` (real view expression + collector + `Server::lookup`; a live check needs a geoip DB, which dev lacks), docs, CHANGELOG — pushed through 8cc4fc8
 - [ ] **Blocked:** sc-build at 8cc4fc8 (the combined `tmp/job15.sh`, which also verifies #10, #14, #15): dev.g8.lo refused ssh on :22 twice (exit 255, stormcentral#97). Then stage `coredns`, close #10, #12, #14, #15
 
+### In progress — #11 secondary timers (2026-10-07)
+Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.
+- [ ] initial transfer retried with backoff 250ms→10s until it succeeds
+- [ ] after a failed refresh check/transfer: retry every SOA `retry`; once `expire` has passed since the last good check the zone is expired → SERVFAIL (and no AXFR out) until a transfer succeeds
+- [ ] serial compare per RFC 1982 (`less`, as upstream); the SOA check goes over TCP like upstream
+- [ ] refresh tasks stop on shutdown/reload (cancellation token); same for `loadbalance weighted`'s reload task
+- [ ] NOTIFY only from a primary's IP (documented)
+- [ ] tests (serial arithmetic, a fake primary driving refresh/retry/expire), docs, CHANGELOG; sc-build; stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #8 `:port` listeners IPv4-only after a reload
-- [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #20 signed zone files do not load (hickory parser)

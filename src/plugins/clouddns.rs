@@ -1,8 +1,8 @@
-//! `clouddns PROJECT_ID:MANAGED_ZONE_NAME... { ... }` — serves Google
+//! `clouddns ZONE:PROJECT_ID:HOSTED_ZONE_NAME... { ... }` — serves Google
 //! Cloud DNS managed zones, refreshed periodically.
 //!
 //! ```text
-//! clouddns my-project:example-zone {
+//! clouddns example.org.:my-project:example-zone {
 //!     credentials FILENAME        # service-account JSON
 //!     fallthrough [ZONES...]
 //! }
@@ -163,18 +163,18 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             return Err(c.errf("plugin/clouddns: this plugin can only be used once per Server Block"));
         }
         let args = c.remaining_args_until_brace();
-        // PROJECT:ZONE_NAME; the DNS origin comes from the zone name? No —
-        // CoreDNS uses the managed zone's dnsName, which we learn on the
-        // first fetch. We require the origin in a third field when the
-        // managed zone name is not the domain: PROJECT:ZONE_NAME[:ORIGIN].
-        let mut ids = Vec::new();
+        // ZONE:PROJECT_ID:HOSTED_ZONE_NAME, as in CoreDNS
+        let mut ids: Vec<(String, String)> = Vec::new();
         for a in &args {
-            let parts: Vec<&str> = a.split(':').collect();
-            match parts.len() {
-                2 => ids.push((crate::dnsutil::fqdn(parts[1]), format!("{}:{}", parts[0], parts[1]))),
-                3 => ids.push((crate::dnsutil::fqdn(parts[2]), format!("{}:{}", parts[0], parts[1]))),
-                _ => return Err(c.errf(format!("invalid zone '{}', expected PROJECT_ID:MANAGED_ZONE_NAME[:ORIGIN]", a))),
+            let parts: Vec<&str> = a.splitn(3, ':').collect();
+            if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+                return Err(c.errf(format!("invalid zone '{}', expected ZONE:PROJECT_ID:HOSTED_ZONE_NAME", a)));
             }
+            let id = (crate::dnsutil::fqdn(parts[0]), format!("{}:{}", parts[1], parts[2]));
+            if ids.contains(&id) {
+                return Err(c.errf(format!("conflict zone '{}'", a)));
+            }
+            ids.push(id);
         }
         if ids.is_empty() {
             return Err(c.errf("no zones specified"));

@@ -162,12 +162,20 @@ Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup h
 - [x] tests (slice index, discovery against a fake API server, cloud readiness), docs, CHANGELOG — pushed through 01000ea
 - [ ] **Blocked:** sc-build. The combined #15+#14 job (`tmp/job15.sh`: full build, tests, #15 live check) at 01000ea got no slot (exit 75, stormcentral#505). Then: fix what fails, stage `coredns`, close #14 and #15
 
+### In progress — #10 dnssec black lies and signature cache (2026-10-07)
+Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache.go`).
+- [ ] black lies as upstream: NXDOMAIN and NODATA bitmaps drop the queried type (unless NSEC); delegation bitmap for referrals and DS; LOC/CERT/HIP/SPF in the bitmaps; NSEC TTL from the SOA; a qtype NSEC query gets the NSEC as the answer
+- [ ] negatives signed only when the authority is exactly one SOA (as upstream)
+- [ ] referrals: sign DS only, or a delegation NSEC; the NS set and glue are not signed
+- [ ] positive answers: additional section signed too
+- [ ] signature cache: an entry whose RRSIG expires within 2 days is re-signed
+- [ ] tests, docs, CHANGELOG; sc-build (stormcentral#505); stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #8 `:port` listeners IPv4-only after a reload
-- [ ] #10 dnssec bogus NXDOMAIN NSEC, RRSIG cache expiry
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #12 view metadata()
 - [ ] #20 signed zone files do not load (hickory parser)

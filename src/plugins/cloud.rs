@@ -35,7 +35,8 @@ impl CloudZones {
         self.ids.iter().map(|(z, _)| z.clone()).collect()
     }
 
-    /// Fetch every zone once; a zone that fails keeps its previous copy.
+    /// Fetch every zone once; a zone that fails keeps its previous copy
+    /// (or stays missing until its first success).
     pub async fn refresh_once(&self, fetch: &Fetcher) {
         let mut next: HashMap<String, Arc<Zone>> = (**self.zones.load()).clone();
         for (origin, id) in &self.ids {
@@ -50,8 +51,13 @@ impl CloudZones {
                 Err(e) => tracing::error!("plugin/{}: fetching {}: {}", self.plugin, origin, e),
             }
         }
+        // ready once every zone has loaded at least once (a failed fetch keeps
+        // a zone missing, so `/ready` stays 503 rather than serving NXDOMAIN)
+        let all = self.ids.iter().all(|(origin, _)| next.contains_key(origin));
+        if all && !self.synced.swap(true, Ordering::Relaxed) {
+            tracing::info!("plugin/{}: all {} zones loaded", self.plugin, self.ids.len());
+        }
         self.zones.store(Arc::new(next));
-        self.synced.store(true, Ordering::Relaxed);
     }
 
     pub fn spawn_refresh(self: &Arc<Self>, fetch: Fetcher, cancel: tokio_util::sync::CancellationToken) {
@@ -130,4 +136,38 @@ pub fn xml_unescape(s: &str) -> String {
 /// A record line in zone-file syntax.
 pub fn rr_line(name: &str, ttl: u32, rtype: &str, rdata: &str) -> String {
     format!("{} {} IN {} {}\n", crate::dnsutil::fqdn(name), ttl, rtype, rdata)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ZONE: &str = "$ORIGIN example.org.\n@ 300 IN SOA ns h 1 2 3 4 5\nwww 300 IN A 192.0.2.1\n";
+
+    #[tokio::test]
+    async fn ready_only_when_every_zone_loaded() {
+        let z = CloudZones::new("test", vec![("example.org.".into(), "ok".into()), ("example.net.".into(), "bad".into())], None, Duration::from_secs(60));
+        let fail = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let f2 = fail.clone();
+        let fetch: Fetcher = Arc::new(move |id: String| {
+            let fail = f2.load(Ordering::Relaxed);
+            Box::pin(async move {
+                if id == "bad" && fail {
+                    anyhow::bail!("unavailable")
+                }
+                Ok(if id == "ok" { ZONE.to_string() } else { ZONE.replace("example.org.", "example.net.") })
+            })
+        });
+        z.refresh_once(&fetch).await;
+        assert!(!z.synced.load(Ordering::Relaxed), "one zone failed: not ready");
+        assert_eq!(z.zones.load().len(), 1);
+        fail.store(false, Ordering::Relaxed);
+        z.refresh_once(&fetch).await;
+        assert!(z.synced.load(Ordering::Relaxed));
+        // a later failure keeps the previous copy and readiness
+        fail.store(true, Ordering::Relaxed);
+        z.refresh_once(&fetch).await;
+        assert!(z.synced.load(Ordering::Relaxed));
+        assert_eq!(z.zones.load().len(), 2);
+    }
 }

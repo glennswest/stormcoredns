@@ -689,6 +689,45 @@ mod tests {
         Endpoint { ips: vec![ip.parse().unwrap()], hostname: None, pod_name: None, ready: true, ports: vec![] }
     }
 
+    /// A one-shot HTTP server answering every request with `status` and `body`
+    /// (or never answering when `status` is 0).
+    async fn fake_api(status: u16, body: &'static str) -> Client {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut c, _)) = l.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = c.read(&mut buf).await;
+                    if status == 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        return;
+                    }
+                    let resp = format!("HTTP/1.1 {} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}", status, body.len(), body);
+                    let _ = c.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        let cfg = kube::Config::new(format!("http://{}", addr).parse().unwrap());
+        Client::try_from(cfg).unwrap()
+    }
+
+    #[tokio::test]
+    async fn discovery_tells_definite_from_transient() {
+        let with = r#"{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"discovery.k8s.io/v1","resources":[{"name":"endpointslices","singularName":"endpointslice","namespaced":true,"kind":"EndpointSlice","verbs":["list","watch"]}]}"#;
+        let without = r#"{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"discovery.k8s.io/v1","resources":[]}"#;
+        let missing = r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"not found","reason":"NotFound","code":404}"#;
+        let broken = r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"unavailable","reason":"ServiceUnavailable","code":503}"#;
+        assert!(discover_slices(&fake_api(200, with).await).await.unwrap());
+        assert!(!discover_slices(&fake_api(200, without).await).await.unwrap());
+        assert!(!discover_slices(&fake_api(404, missing).await).await.unwrap(), "no discovery group: core Endpoints");
+        assert!(discover_slices(&fake_api(503, broken).await).await.is_err(), "5xx is transient");
+        let start = std::time::Instant::now();
+        assert!(discover_slices(&fake_api(0, "").await).await.is_err(), "no answer is transient");
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+    }
+
     #[test]
     fn ip_index_survives_another_slice_dropping_the_ip() {
         let s = Store::default();

@@ -120,11 +120,11 @@ implemented (`-plugins` lists them):
 
 | area | plugins |
 |---|---|
-| cluster DNS | `kubernetes` `k8s_external` `autopath` `forward` `cache`* `loop` `loadbalance` `reload` `health` `ready` `prometheus` `errors` |
-| queries | `rewrite` `template`* `hosts`* `acl`* `view`* `cancel` `bufsize`* `dns64`* `any` `local`* `minimal` `header` `nsid` `chaos` `whoami`* `erratic` |
+| cluster DNS | `kubernetes` `k8s_external` `autopath` `forward` `cache` `loop` `loadbalance` `reload` `health` `ready` `prometheus` `errors` |
+| queries | `rewrite` `template`* `hosts` `acl` `view`* `cancel` `bufsize` `dns64` `any` `local` `minimal` `header` `nsid` `chaos` `whoami` `erratic` |
 | authoritative | `file`* `auto` `secondary`* `transfer` `dnssec`* `sign`* `tsig`* |
-| server | `bind` `tls`* `timeouts`* `multisocket` `root` `debug`* `metadata` `geoip` `on` `log` `dnstap`* `trace`* `pprof`* |
-| backends | `etcd`* `grpc` `route53` `azure` `clouddns`* |
+| server | `bind` `tls` `timeouts` `multisocket` `root` `debug` `metadata` `geoip` `on` `log` `dnstap`* `trace`* `pprof`* |
+| backends | `etcd` `grpc` `route53`* `azure` `clouddns` |
 
 Unmarked plugins work as in CoreDNS. The plugins marked * work, with gaps
 listed on the "Partial, or differs from CoreDNS" slide. The complete per-plugin status, with coded defaults, is in
@@ -236,12 +236,11 @@ upstream fallback**: if stormcoredns does not build, the release has no
 
 | | |
 |---|---|
-| **missing** | `dnssec`/`sign`: no RSA (ECDSA and Ed25519 only), no NSEC3, no CDS/CDNSKEY · `trace`: no exporter · `pprof`: process stats, not Go profiles · `debug`: does nothing · `kubernetes multicluster` |
-| **partial** | `dnstap`: client messages only · `local`: some zones missing · `timeouts`: not on DoH or gRPC · `tsig`: AXFR unsigned · `view metadata()`: always empty · `file`: signed zone files do not load (#20) |
-| **differs** | `bufsize` default 512 (CoreDNS 1232) · `cache` does not cache SERVFAIL (CoreDNS 5 s) · `clouddns` argument order · `acl` does not fall through to the next rule |
+| **missing** | `dnssec`/`sign`: no RSA (ECDSA and Ed25519 only), no NSEC3, no CDS/CDNSKEY · `trace`: no exporter · `pprof`: process stats, not Go profiles · `kubernetes multicluster` |
+| **partial** | `dnstap`: no FORWARDER messages (#22) · `template`: no Go template functions (#21) · `tsig`: SHA-2 only, AXFR unsigned (#24) · `route53`: no IRSA/IMDS (#23) · `view metadata()`: always empty · `file`: signed zone files do not load (#20) |
 
-The differences are tracked in #15, which also marks the upstream
-comparisons that need checking against 1.12; options that are accepted and
+The defaults and behaviours the docs audit found were checked against
+CoreDNS v1.12.4's source and fixed in #15; options that are accepted and
 ignored are listed per plugin in docs/plugins.md.
 
 ---
@@ -274,5 +273,5 @@ These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
 | #8 | after a reload, `:53` listens on IPv4 only |
 | #14 | NXDOMAIN (not SERVFAIL) before the watches sync |
 
-Also open: #10 dnssec, #11 secondary, #12 view, #15
+Also open: #10 dnssec, #11 secondary, #12 view, #21–#24
 CoreDNS differences, #20 signed zone files, #5 tests.

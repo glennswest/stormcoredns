@@ -188,9 +188,12 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 - [x] tests (`serial_arithmetic`; `refresh_retry_expire` against a fake TCP primary: backoff, NOTIFY refresh, no downgrade, expiry → SERVFAIL/no AXFR out, recovery, shutdown), docs, CHANGELOG — pushed through 62509ef
 - [ ] **Blocked:** sc-build (combined `tmp/job15.sh`, also for #10/#12/#14/#15): dev.g8.lo unreachable (no route to host / refused, stormcentral#97). Then stage `coredns`, close #10, #11, #12, #14, #15
 
+### In progress — #8 `:port` IPv4-only after a reload (2026-10-07)
+- [ ] `resolve_bind`: dual stack when IPv6 is usable (probe `[::]:0` once, cached), not by binding the real port (held by the old instance during a reload, or privileged)
+- [ ] test: with the port held by another SO_REUSEPORT listener, `:port` still resolves to `[::]:port`; docs, CHANGELOG; sc-build (stormcentral#97/#505); stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
-- [ ] #8 `:port` listeners IPv4-only after a reload
 - [ ] #20 signed zone files do not load (hickory parser)

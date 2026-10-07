@@ -406,15 +406,22 @@ pub fn bind_tcp(addr: &str) -> Result<std::net::TcpListener> {
     Ok(sock.into())
 }
 
+/// Can this host open IPv6 sockets? Probed once by binding `[::]:0`.
+pub fn ipv6_available() -> bool {
+    static V6: Lazy<bool> = Lazy::new(|| std::net::UdpSocket::bind("[::]:0").is_ok());
+    *V6
+}
+
 /// `:53` → `[::]:53` (dual stack) or `0.0.0.0:53` when IPv6 is unavailable;
 /// `host:port` otherwise.
 pub fn resolve_bind(addr: &str) -> Result<SocketAddr> {
     if let Some(port) = addr.strip_prefix(':') {
         let p: u16 = port.parse().map_err(|_| anyhow!("bad port in {}", addr))?;
-        // prefer dual-stack wildcard; fall back to v4 if v6 is disabled
-        let v6: SocketAddr = format!("[::]:{}", p).parse().unwrap();
-        if std::net::UdpSocket::bind(v6).is_ok() || std::net::TcpListener::bind(v6).is_ok() {
-            return Ok(v6);
+        // dual-stack wildcard when IPv6 works on this host. Not decided by
+        // binding the real port: during a reload the old instance still
+        // holds it, and a privileged port may not bind here (#8).
+        if ipv6_available() {
+            return Ok(format!("[::]:{}", p).parse().unwrap());
         }
         return Ok(format!("0.0.0.0:{}", p).parse().unwrap());
     }
@@ -678,6 +685,22 @@ mod tests {
         assert_eq!(r.metadata.value("test/flag").as_deref(), Some("yes"), "the chain sees the metadata too");
         let mut r = Request::for_test("other.example.org.", hickory_proto::rr::RecordType::A);
         assert_eq!(srv.lookup(&mut r).unwrap().config.view_name, "");
+    }
+
+    #[test]
+    fn port_held_by_another_listener_stays_dual_stack() {
+        // the old instance during a reload: a reuseport listener on the port
+        let held = bind_tcp("[::]:0").or_else(|_| bind_tcp("0.0.0.0:0")).unwrap();
+        let port = held.local_addr().unwrap().port();
+        let sa = resolve_bind(&format!(":{}", port)).unwrap();
+        if ipv6_available() {
+            assert_eq!(sa, format!("[::]:{}", port).parse::<SocketAddr>().unwrap(), "still dual stack while the port is held");
+            // and the new instance can bind it next to the old one
+            assert!(bind_tcp(&sa.to_string()).is_ok());
+        } else {
+            assert_eq!(sa, format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap());
+        }
+        assert_eq!(resolve_bind("127.0.0.1:53").unwrap(), "127.0.0.1:53".parse::<SocketAddr>().unwrap());
     }
 
     #[tokio::test]

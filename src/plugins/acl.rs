@@ -6,12 +6,16 @@
 //!     ACTION [type QTYPE...] [net SOURCE...]
 //! }
 //! ```
-//! ACTION is `allow`, `block`, `filter` or `drop`. Rules are evaluated in
-//! order; the first match wins; no match means allow.
+//! ACTION is `allow`, `block`, `filter` or `drop`. As in CoreDNS, the
+//! first matching policy of the first matching rule decides; a rule with
+//! no matching policy passes the query on to the next rule, and a query no
+//! rule decides is allowed. Blocked (REFUSED) and filtered (empty NOERROR)
+//! replies carry an Extended DNS Error (Blocked 15 / Filtered 17).
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use async_trait::async_trait;
-use hickory_proto::op::ResponseCode;
+use hickory_proto::op::{Edns, Message, ResponseCode};
+use hickory_proto::rr::rdata::opt::EdnsOption;
 use hickory_proto::rr::RecordType;
 use ipnet::IpNet;
 use once_cell::sync::Lazy;
@@ -29,7 +33,7 @@ static FILTER_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     c
 });
 static ALLOW_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
-    let c = IntCounterVec::new(prometheus::Opts::new("coredns_acl_allowed_requests_total", "Counter of DNS requests being allowed."), &["server"]).unwrap();
+    let c = IntCounterVec::new(prometheus::Opts::new("coredns_acl_allowed_requests_total", "Counter of DNS requests being allowed."), &["server", "view"]).unwrap();
     crate::metrics::register(Box::new(c.clone()));
     c
 });
@@ -83,34 +87,48 @@ impl Handler for Acl {
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
         let name = req.name();
         for rule in &self.rules {
-            if crate::plugin::zones_match(&rule.zones, &name).is_none() {
-                continue;
-            }
-            let action = rule.policies.iter().find(|p| p.matches(req)).map(|p| p.action).unwrap_or(Action::Allow);
-            match action {
-                Action::Allow => {
-                    ALLOW_COUNT.with_label_values(&[&req.server]).inc();
-                    return next.serve(req).await;
-                }
-                Action::Block => {
-                    BLOCK_COUNT.with_label_values(&[&req.server, &req.zone, &req.view]).inc();
+            let Some(zone) = crate::plugin::zones_match(&rule.zones, &name) else { continue };
+            let zone = zone.to_string();
+            match rule.policies.iter().find(|p| p.matches(req)).map(|p| p.action) {
+                // no policy matched: the next rule decides
+                None => continue,
+                Some(Action::Allow) => break,
+                Some(Action::Block) => {
+                    BLOCK_COUNT.with_label_values(&[&req.server, &zone, &req.view]).inc();
                     let mut m = req.new_reply();
                     m.set_response_code(ResponseCode::Refused);
+                    add_ede(&mut m, EDE_BLOCKED);
                     return Ok(Reply::Msg(m));
                 }
-                Action::Filter => {
-                    FILTER_COUNT.with_label_values(&[&req.server, &req.zone, &req.view]).inc();
-                    let m = req.new_reply();
+                Some(Action::Filter) => {
+                    FILTER_COUNT.with_label_values(&[&req.server, &zone, &req.view]).inc();
+                    let mut m = req.new_reply();
+                    add_ede(&mut m, EDE_FILTERED);
                     return Ok(Reply::Msg(m));
                 }
-                Action::Drop => {
-                    DROP_COUNT.with_label_values(&[&req.server, &req.zone, &req.view]).inc();
+                Some(Action::Drop) => {
+                    DROP_COUNT.with_label_values(&[&req.server, &zone, &req.view]).inc();
                     return Ok(Reply::Drop);
                 }
             }
         }
+        ALLOW_COUNT.with_label_values(&[&req.server, &req.view]).inc();
         next.serve(req).await
     }
+}
+
+/// Extended DNS Error codes (RFC 8914).
+const EDE_BLOCKED: u16 = 15;
+const EDE_FILTERED: u16 = 17;
+const EDNS_EDE: u16 = 15;
+
+/// Add an EDE option, with EDNS0 (4096, DO) as CoreDNS sets it.
+fn add_ede(m: &mut Message, code: u16) {
+    let mut e = m.extensions().clone().unwrap_or_else(Edns::new);
+    e.set_max_payload(4096);
+    e.set_dnssec_ok(true);
+    e.options_mut().insert(EdnsOption::Unknown(EDNS_EDE, code.to_be_bytes().to_vec()));
+    m.set_edns(e);
 }
 
 pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
@@ -204,5 +222,24 @@ mod tests {
         assert_eq!(r.rcode(), ResponseCode::Refused);
         req.remote = "10.1.2.3:5".parse().unwrap();
         assert!(acl.serve_dns(&mut req, Next::new(&[])).await.is_err(), "allowed → falls to empty chain");
+    }
+
+    #[tokio::test]
+    async fn unmatched_rule_falls_through_and_ede() {
+        let acl = Acl {
+            rules: vec![
+                // matches the zone, but no policy matches 192.0.2.1
+                Rule { zones: vec![".".into()], policies: vec![Policy { action: Action::Allow, qtypes: vec![], nets: vec!["10.0.0.0/8".parse().unwrap()] }] },
+                Rule { zones: vec!["example.org.".into()], policies: vec![Policy { action: Action::Filter, qtypes: vec![], nets: vec!["0.0.0.0/0".parse().unwrap()] }] },
+            ],
+        };
+        let mut req = Request::for_test("example.org.", RecordType::A);
+        req.remote = "192.0.2.1:5".parse().unwrap();
+        let r = acl.serve_dns(&mut req, Next::new(&[])).await.unwrap();
+        let m = r.msg().unwrap();
+        assert_eq!(m.response_code(), ResponseCode::NoError);
+        let e = m.extensions().as_ref().unwrap();
+        let ede = e.options().get(hickory_proto::rr::rdata::opt::EdnsCode::from(15)).unwrap();
+        assert_eq!(ede, &EdnsOption::Unknown(15, vec![0, 17]));
     }
 }

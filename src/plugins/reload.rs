@@ -1,5 +1,6 @@
 //! `reload [INTERVAL] [JITTER]` — watches the Corefile and restarts the
-//! server when its contents change. Default interval 30s, jitter 15s.
+//! server when its parsed contents change (imports included). Default
+//! interval 30s, jitter 15s. `coredns_reload_version_info{hash="sha512"}`.
 
 use crate::plugin::Controller;
 use once_cell::sync::Lazy;
@@ -13,10 +14,19 @@ use tokio_util::sync::CancellationToken;
 /// The watcher of the current instance (only one per process).
 static WATCHER: Lazy<Mutex<Option<CancellationToken>>> = Lazy::new(|| Mutex::new(None));
 
+/// SHA-512 of the parsed Corefile, as CoreDNS hashes it: imports are
+/// expanded (so editing an imported file reloads), and a Corefile that
+/// does not parse is skipped until it does.
 fn hash_file(p: &PathBuf) -> Option<String> {
-    let data = std::fs::read(p).ok()?;
+    let blocks = match crate::corefile::parser::parse_file(p) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("plugin/reload: Corefile parse failed: {}", e);
+            return None;
+        }
+    };
     let mut h = Sha512::new();
-    h.update(&data);
+    h.update(format!("{:?}", blocks).as_bytes());
     Some(hex::encode(h.finalize()))
 }
 

@@ -152,12 +152,20 @@ Split into their own issues if large: Go template functions, dnstap FORWARDER_*,
 - [x] docs (plugins.md, README, integration.md, presentation), CHANGELOG
 - [ ] **Blocked:** sc-build verification. b51de9e (through erratic) was green (73+6 tests, no warnings); the full job at aa3c367 got no build slot four times in a row (exit 75, P3 starved, stormcentral#505); item proposed after it. Next: run `tmp/job15.sh`'s steps (full build + test + live check of whoami/local/hosts/acl EDE/template/erratic AXFR/process metrics/reload), fix what fails, stage `coredns`, close #15
 
+### In progress — #14 kubernetes/cloud readiness and discovery (2026-10-07)
+Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup hook waits for the API to sync, up to `startup_timeout` (default 5s), then serves what it has.
+- [ ] kubernetes: wait for sync in the startup hook, `startup_timeout DURATION` (default 5s), as CoreDNS
+- [ ] kubernetes: EndpointSlice discovery with a timeout; transient errors retry in the background instead of locking in core Endpoints (CoreDNS 1.12 is slices-only; our Endpoints fallback stays as an extension for rustkube)
+- [ ] kubernetes: `set_slice` keeps an IP→service index entry while another slice of the service still has the IP
+- [ ] kubernetes: `endpoint https://` without `tls` verifies against the system roots (as CoreDNS) instead of skipping verification; `tls` without `endpoint` warns
+- [ ] route53/azure/clouddns: ready only once every zone has been fetched successfully
+- [ ] tests, docs, CHANGELOG; sc-build (build slots: stormcentral#505); stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #8 `:port` listeners IPv4-only after a reload
-- [ ] #14 kubernetes NXDOMAIN before sync; discovery/readiness edge cases
 - [ ] #10 dnssec bogus NXDOMAIN NSEC, RRSIG cache expiry
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
 - [ ] #12 view metadata()

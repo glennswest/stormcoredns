@@ -50,13 +50,18 @@ pub struct Server {
 
 impl Server {
     /// Find the zone entry for a query name: longest matching zone, then
-    /// the first config whose `view` filter accepts the request.
-    fn lookup<'s>(&'s self, req: &Request) -> Option<&'s ZoneEntry> {
+    /// the first config whose `view` filter accepts the request. As in
+    /// CoreDNS, a config's metadata is collected before its filter runs, so
+    /// `metadata()` in a view expression sees the providers' labels.
+    fn lookup<'s>(&'s self, req: &mut Request) -> Option<&'s ZoneEntry> {
         let qname = req.name_uncached();
         let mut cursor: &str = &qname;
         loop {
             if let Some(entries) = self.zones.get(cursor) {
                 for e in entries {
+                    if let Some(md) = &e.config.metadata {
+                        md.collect(req);
+                    }
                     match &e.config.filter {
                         Some(f) if !f(req) => continue,
                         _ => return Some(e),
@@ -626,6 +631,53 @@ mod tests {
             n.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { if fail { Err(anyhow!("no")) } else { Ok(()) } })
         })
+    }
+
+    /// A metadata provider that labels queries for `flag.*` names.
+    struct Flagger;
+    #[async_trait::async_trait]
+    impl Handler for Flagger {
+        fn name(&self) -> &'static str {
+            "flagger"
+        }
+        fn metadata(&self, req: &mut Request) {
+            if req.name_uncached().starts_with("flag.") {
+                req.metadata.set_static("test/flag", "yes");
+            }
+        }
+        async fn serve_dns(&self, req: &mut Request, next: crate::plugin::Next<'_>) -> crate::plugin::DnsResult {
+            next.serve(req).await
+        }
+    }
+
+    #[test]
+    fn view_filters_see_collected_metadata() {
+        let key = config::parse_key(".").unwrap();
+        let mut viewed = config::ServerConfig::new(&key, 0, 0);
+        viewed.view_name = "flagged".into();
+        let expr = crate::plugins::view::parse("metadata('test/flag') == 'yes'").unwrap();
+        viewed.filter = Some(Arc::new(move |r: &Request| expr.eval(r)));
+        let providers: Vec<Arc<dyn Handler>> = vec![Arc::new(Flagger)];
+        viewed.metadata = Some(crate::plugins::metadata::Metadata::new(vec![".".into()], providers));
+        let plain = config::ServerConfig::new(&key, 1, 0);
+        let entry = |c: config::ServerConfig| ZoneEntry { config: Arc::new(c), chain: Arc::new(Vec::new()) };
+        let srv = Server {
+            label: "dns://:0".into(),
+            transport: Transport::Dns,
+            addrs: vec![],
+            zones: HashMap::from([(".".to_string(), vec![entry(viewed), entry(plain)])]),
+            tls: None,
+            read_timeout: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(1),
+            idle_timeout: Duration::from_secs(1),
+            num_sockets: 1,
+            graceful_timeout: Duration::from_secs(1),
+        };
+        let mut r = Request::for_test("flag.example.org.", hickory_proto::rr::RecordType::A);
+        assert_eq!(srv.lookup(&mut r).unwrap().config.view_name, "flagged");
+        assert_eq!(r.metadata.value("test/flag").as_deref(), Some("yes"), "the chain sees the metadata too");
+        let mut r = Request::for_test("other.example.org.", hickory_proto::rr::RecordType::A);
+        assert_eq!(srv.lookup(&mut r).unwrap().config.view_name, "");
     }
 
     #[tokio::test]

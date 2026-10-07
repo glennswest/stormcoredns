@@ -107,6 +107,9 @@ pub struct ServerConfig {
     pub view_name: String,
     /// Request filter from the `view` plugin.
     pub filter: Option<FilterFn>,
+    /// The `metadata` plugin, which collects metadata before the view
+    /// filter runs (CoreDNS's `metaCollector`).
+    pub metadata: Option<Arc<crate::plugins::metadata::Metadata>>,
     /// TSIG secrets: key name → base64 secret (from `tsig`).
     pub tsig_secrets: HashMap<String, String>,
     pub read_timeout: Option<Duration>,
@@ -138,6 +141,7 @@ impl ServerConfig {
             plugins: Vec::new(),
             view_name: String::new(),
             filter: None,
+            metadata: None,
             tsig_secrets: HashMap::new(),
             read_timeout: None,
             write_timeout: None,

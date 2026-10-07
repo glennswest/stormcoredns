@@ -196,8 +196,13 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 ### Done — #17 presentation: stormcos#79 done (2026-10-07)
 - [x] Checked in stormcos (build-goldens.sh, 80-coredns.yaml, #79 closed 2026-09-30); slide updated in c1b91b4; docs-only, closed
 
+### In progress — #6 lameduck on reload (2026-10-07)
+Checked against CoreDNS v1.12.4: health's lameduck is `OnFinalShutdown` only; `/health` stays 200; ready goes 503.
+- [x] final-shutdown hook kind (`Controller::on_final_shutdown`, `Instance::stop_final` at process exit); health lameduck there; `/health` always 200; `/ready` 503 while draining — pushed through 0fa5bcf
+- [x] unit test `lameduck_only_at_process_exit`; docs, CHANGELOG
+- [ ] **Blocked:** sc-build of `tmp/job_all.sh` (job15 + live8 + live6: /health and /ready across SIGHUP and during the SIGTERM lameduck) — dev.g8.lo unreachable (stormcentral#97). Then stage `coredns`; close #6 with #8, #10–#12, #14, #15; tell stormcos its `/health` liveness probe is safe once released
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
-- [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #20 signed zone files do not load (hickory parser)

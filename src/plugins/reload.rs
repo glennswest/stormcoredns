@@ -3,16 +3,11 @@
 //! interval 30s, jitter 15s. `coredns_reload_version_info{hash="sha512"}`.
 
 use crate::plugin::Controller;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use rand::Rng;
 use sha2::{Digest, Sha512};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-
-/// The watcher of the current instance (only one per process).
-static WATCHER: Lazy<Mutex<Option<CancellationToken>>> = Lazy::new(|| Mutex::new(None));
 
 /// SHA-512 of the parsed Corefile, as CoreDNS hashes it: imports are
 /// expanded (so editing an imported file reloads), and a Corefile that
@@ -62,19 +57,22 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     let corefile: PathBuf = PathBuf::from(c.config.values.get("corefile").cloned().unwrap_or_else(|| "Corefile".into()));
     c.once_per_server_block(|c| {
         let (interval, jitter, corefile) = (interval, jitter, corefile.clone());
+        // one watcher per instance, stopped by that instance's shutdown: after a
+        // successful reload the old instance stops (and its watcher with it); after
+        // a failed one the old instance keeps serving and keeps watching (#7)
+        let cancel = CancellationToken::new();
+        let stop = cancel.clone();
+        c.on_shutdown(Box::new(move || {
+            Box::pin(async move {
+                stop.cancel();
+                Ok(())
+            })
+        }));
         c.on_startup(Box::new(move || {
             Box::pin(async move {
-                let cancel = CancellationToken::new();
-                {
-                    let mut w = WATCHER.lock();
-                    if let Some(old) = w.take() {
-                        old.cancel();
-                    }
-                    *w = Some(cancel.clone());
-                }
-                let start_hash = hash_file(&corefile).unwrap_or_default();
+                let mut hash = hash_file(&corefile).unwrap_or_default();
                 crate::metrics::RELOAD_VERSION_INFO.reset();
-                crate::metrics::RELOAD_VERSION_INFO.with_label_values(&["sha512", &start_hash]).set(1);
+                crate::metrics::RELOAD_VERSION_INFO.with_label_values(&["sha512", &hash]).set(1);
                 tokio::spawn(async move {
                     loop {
                         let j = rand::thread_rng().gen_range(0..=jitter.as_millis() as u64);
@@ -84,10 +82,12 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                             _ = tokio::time::sleep(wait) => {}
                         }
                         match hash_file(&corefile) {
-                            Some(h) if h != start_hash => {
+                            Some(h) if h != hash => {
                                 tracing::info!("plugin/reload: Corefile changed on disk, reloading");
+                                // as in CoreDNS: take the new hash first, so a broken
+                                // file is not retried until it changes again
+                                hash = h;
                                 crate::server::request_reload();
-                                return;
                             }
                             _ => {}
                         }

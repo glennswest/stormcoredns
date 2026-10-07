@@ -485,6 +485,7 @@ impl Instance {
     /// post-finalize wiring, bind listeners, run startup hooks (a failing
     /// hook aborts the start), and start serving.
     pub async fn start(blocks: Vec<crate::corefile::ServerBlock>, opts: &build::BuildOptions) -> Result<Instance> {
+        crate::plugins::reset_pending();
         let mut built = build::build(blocks, opts)?;
         let mut shutdown_hooks = Vec::new();
         let mut final_shutdown_hooks = Vec::new();
@@ -535,7 +536,15 @@ impl Instance {
         }
 
         for h in startup_hooks {
-            h().await?;
+            if let Err(e) = h().await {
+                // undo what the hooks that ran started (watchers, refresh tasks)
+                for h in shutdown_hooks {
+                    if let Err(e) = h().await {
+                        tracing::warn!("shutdown hook after a failed start: {}", e);
+                    }
+                }
+                return Err(e);
+            }
         }
 
         for (srv, ls) in bound {
@@ -570,6 +579,7 @@ impl Instance {
             }
         }
         CURRENT.store(Arc::new(servers.clone()));
+        crate::plugins::publish(&configs);
         for srv in &servers {
             for a in &srv.addrs {
                 let shown = if a.starts_with(':') { format!("[::]{}", a) } else { a.clone() };
@@ -714,6 +724,55 @@ mod tests {
             assert_eq!(sa, format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap());
         }
         assert_eq!(resolve_bind("127.0.0.1:53").unwrap(), "127.0.0.1:53".parse::<SocketAddr>().unwrap());
+    }
+
+    /// Waits up to `secs` for the reload request counter to pass `from`.
+    async fn reload_requested(rx: &mut watch::Receiver<u64>, from: u64, secs: u64) -> bool {
+        tokio::time::timeout(Duration::from_secs(secs), async {
+            while *rx.borrow_and_update() <= from {
+                if rx.changed().await.is_err() {
+                    return false;
+                }
+            }
+            true
+        })
+        .await
+        .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    async fn reload_watcher_keeps_watching_and_a_failed_start_cleans_up() {
+        let dir = std::env::temp_dir().join(format!("scd-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Corefile");
+        let good = ".:0 {\n bind 127.0.0.1\n reload 2s 1s\n whoami\n}\n";
+        std::fs::write(&path, good).unwrap();
+        let opts = build::BuildOptions { default_port: 0, corefile: path.clone() };
+        let blocks = crate::corefile::parser::parse_file(&path).unwrap();
+        let inst = Instance::start(blocks, &opts).await.unwrap();
+        let mut rx = RELOAD.subscribe();
+        // an edit is requested once; nothing reloads here (as if the new Corefile
+        // failed), and the watcher must still see the next edit (#7)
+        let n0 = *rx.borrow_and_update();
+        std::fs::write(&path, ".:0 {\n bind 127.0.0.1\n reload 2s 1s\n nosuchplugin\n}\n").unwrap();
+        assert!(reload_requested(&mut rx, n0, 8).await, "first edit requested");
+        let n1 = *rx.borrow_and_update();
+        assert!(!reload_requested(&mut rx, n1, 4).await, "the same (broken) file is not requested again");
+        std::fs::write(&path, good.replace("whoami", "whoami\n errors")).unwrap();
+        assert!(reload_requested(&mut rx, n1, 8).await, "the next edit is still seen");
+        inst.stop().await;
+        let n2 = *rx.borrow_and_update();
+        std::fs::write(&path, good).unwrap();
+        assert!(!reload_requested(&mut rx, n2, 5).await, "a stopped instance's watcher is gone");
+        // a start whose startup hook fails stops what its other hooks started
+        let failing = ".:0 {\n bind 127.0.0.1\n reload 2s 1s\n on startup /bin/false\n whoami\n}\n";
+        std::fs::write(&path, failing).unwrap();
+        let blocks = crate::corefile::parser::parse_file(&path).unwrap();
+        assert!(Instance::start(blocks, &opts).await.is_err());
+        let n3 = *rx.borrow_and_update();
+        std::fs::write(&path, good).unwrap();
+        assert!(!reload_requested(&mut rx, n3, 5).await, "no watcher left by the failed start");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

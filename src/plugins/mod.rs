@@ -56,12 +56,25 @@ pub mod azure;
 pub mod route53;
 
 /// Called once all configs are finalised (chains sorted) and before
-/// listeners start: lets plugins that need the complete plugin list
-/// (ready, health, prometheus) see it.
+/// listeners start: cross-plugin wiring of the new instance's handlers.
 pub fn post_finalize(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
     wire::run(configs);
+}
+
+/// Called once the new instance has started (listeners bound, startup
+/// hooks done): publish process-wide state that must follow the running
+/// instance (`/ready`'s plugin list, `plugin_enabled`). A start that fails
+/// leaves the old instance's state in place (#7).
+pub fn publish(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
     ready::post_finalize(configs);
     metrics::post_finalize(configs);
+}
+
+/// Drop anything a failed earlier build left registered (pending wiring,
+/// `ready` blocks), before a new build runs setup.
+pub fn reset_pending() {
+    wire::reset();
+    ready::reset();
 }
 
 /// Deferred cross-plugin wiring: a plugin's `setup` runs before the
@@ -82,6 +95,10 @@ pub mod wire {
     /// Register `f` to run against the finished config of (block, key).
     pub fn register(c: &crate::plugin::Controller<'_>, f: impl FnOnce(&ServerConfig) + Send + 'static) {
         PENDING.lock().push((c.server_block_index, c.server_block_key_index, Box::new(f)));
+    }
+
+    pub fn reset() {
+        PENDING.lock().clear();
     }
 
     pub fn run(configs: &[Arc<ServerConfig>]) {

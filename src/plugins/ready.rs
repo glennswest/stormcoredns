@@ -23,6 +23,10 @@ pub fn set_draining() {
     DRAINING.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub fn reset() {
+    ENABLED_BLOCKS.lock().clear();
+}
+
 pub fn post_finalize(configs: &[Arc<ServerConfig>]) {
     let blocks = std::mem::take(&mut *ENABLED_BLOCKS.lock());
     let mut list = Vec::new();

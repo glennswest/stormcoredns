@@ -11,7 +11,11 @@
 //! }
 //! ```
 //! Credentials: the `aws_access_key` option, `credentials` profile file,
-//! or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`.
+//! `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`, or the
+//! shared credentials file (`AWS_SHARED_CREDENTIALS_FILE`, default
+//! `~/.aws/credentials`, profile `AWS_PROFILE` or `default`). Web identity
+//! (IRSA), ECS and EC2 instance-metadata credentials are not supported yet.
+//! Alias record sets are skipped, as in CoreDNS.
 
 use super::cloud::{self, CloudZones, Fetcher};
 use crate::plugin::{Controller, DnsResult, Handler, Next, Request};
@@ -126,10 +130,7 @@ async fn fetch_zone(client: reqwest::Client, creds: Credentials, endpoint: Strin
             let name = cloud::xml_tags(rrset, "Name").first().map(|s| cloud::xml_unescape(s)).unwrap_or_default();
             let rtype = cloud::xml_tags(rrset, "Type").first().map(|s| s.to_string()).unwrap_or_default();
             if cloud::xml_tags(rrset, "AliasTarget").first().is_some() {
-                // alias records need Route53 resolution; expose as CNAME to the target
-                if let Some(target) = cloud::xml_tags(rrset, "DNSName").first() {
-                    out.push_str(&cloud::rr_line(&name.replace("\\052", "*"), 60, "CNAME", &cloud::xml_unescape(target)));
-                }
+                // alias record sets have no records of their own; CoreDNS skips them
                 continue;
             }
             let ttl: u32 = cloud::xml_tags(rrset, "TTL").first().and_then(|t| t.parse().ok()).unwrap_or(300);
@@ -223,7 +224,16 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             Some(c) => c,
             None => match (std::env::var("AWS_ACCESS_KEY_ID"), std::env::var("AWS_SECRET_ACCESS_KEY")) {
                 (Ok(a), Ok(s)) => Credentials { access_key: a, secret_key: s, session_token: std::env::var("AWS_SESSION_TOKEN").ok() },
-                _ => return Err(c.errf("no AWS credentials: use aws_access_key, credentials, or the AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment")),
+                // the SDK's next source: the shared credentials file, profile $AWS_PROFILE or default
+                _ => {
+                    let file = std::env::var("AWS_SHARED_CREDENTIALS_FILE")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".aws/credentials"));
+                    let profile = std::env::var("AWS_PROFILE").unwrap_or_else(|_| "default".into());
+                    profile_credentials(&file, &profile).map_err(|e| {
+                        c.errf(format!("no AWS credentials: use aws_access_key, credentials, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, or a shared credentials file ({})", e))
+                    })?
+                }
             },
         };
         let zones = CloudZones::new("route53", ids, fallthrough, refresh);

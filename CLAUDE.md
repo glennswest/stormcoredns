@@ -193,6 +193,9 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 - [x] test `port_held_by_another_listener_stays_dual_stack`, docs, CHANGELOG — pushed through 72c1180
 - [ ] **Blocked:** sc-build of `tmp/job_all.sh` (= `job15.sh` + `live8.sh`: v4/v6 queries before and after SIGHUP and a Corefile-edit reload) — dev.g8.lo: no route to host (stormcentral#97). One passing run verifies #8, #10, #11, #12, #14, #15; then stage `coredns` and close them
 
+### Done — #17 presentation: stormcos#79 done (2026-10-07)
+- [x] Checked in stormcos (build-goldens.sh, 80-coredns.yaml, #79 closed 2026-09-30); slide updated in c1b91b4; docs-only, closed
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck

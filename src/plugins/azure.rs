@@ -55,6 +55,12 @@ fn json_str<'a>(v: &'a serde_json::Value, k: &str) -> Option<&'a str> {
     v.get(k).and_then(|x| x.as_str())
 }
 
+/// A record-set property by name, ignoring case: the public DNS API says
+/// `TTL`/`ARecords`/`CNAMERecord`, the private DNS API `ttl`/`aRecords`/`cnameRecord`.
+fn prop<'a>(p: &'a serde_json::Value, k: &str) -> Option<&'a serde_json::Value> {
+    p.get(k).or_else(|| p.as_object()?.iter().find(|(name, _)| name.eq_ignore_ascii_case(k)).map(|(_, v)| v))
+}
+
 /// Convert one Azure record set into zone-file lines.
 fn rrset_lines(rs: &serde_json::Value, zone: &str) -> String {
     let mut out = String::new();
@@ -62,13 +68,13 @@ fn rrset_lines(rs: &serde_json::Value, zone: &str) -> String {
     let name = if rel == "@" { zone.to_string() } else { format!("{}.{}", rel, zone) };
     let ty = json_str(rs, "type").unwrap_or("").rsplit('/').next().unwrap_or("").to_string();
     let Some(p) = rs.get("properties") else { return out };
-    let ttl = p.get("TTL").and_then(|t| t.as_u64()).unwrap_or(300) as u32;
-    let arr = |k: &str| p.get(k).and_then(|a| a.as_array()).cloned().unwrap_or_default();
+    let ttl = prop(p, "TTL").and_then(|t| t.as_u64()).unwrap_or(300) as u32;
+    let arr = |k: &str| prop(p, k).and_then(|a| a.as_array()).cloned().unwrap_or_default();
     match ty.as_str() {
         "A" => arr("ARecords").iter().filter_map(|r| json_str(r, "ipv4Address")).for_each(|v| out.push_str(&cloud::rr_line(&name, ttl, "A", v))),
         "AAAA" => arr("AAAARecords").iter().filter_map(|r| json_str(r, "ipv6Address")).for_each(|v| out.push_str(&cloud::rr_line(&name, ttl, "AAAA", v))),
         "CNAME" => {
-            if let Some(v) = p.get("CNAMERecord").and_then(|r| json_str(r, "cname")) {
+            if let Some(v) = prop(p, "CNAMERecord").and_then(|r| json_str(r, "cname")) {
                 out.push_str(&cloud::rr_line(&name, ttl, "CNAME", &crate::dnsutil::fqdn(v)));
             }
         }
@@ -97,7 +103,7 @@ fn rrset_lines(rs: &serde_json::Value, zone: &str) -> String {
             }
         }),
         "SOA" => {
-            if let Some(s) = p.get("SOARecord") {
+            if let Some(s) = prop(p, "SOARecord") {
                 let g = |k: &str| s.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
                 out.push_str(&cloud::rr_line(
                     &name,
@@ -240,4 +246,20 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
         }));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_and_private_casing() {
+        let public = serde_json::json!({"name": "www", "type": "Microsoft.Network/dnszones/A", "properties": {"TTL": 60, "ARecords": [{"ipv4Address": "192.0.2.1"}]}});
+        let private = serde_json::json!({"name": "www", "type": "Microsoft.Network/privateDnsZones/A", "properties": {"ttl": 60, "aRecords": [{"ipv4Address": "192.0.2.1"}]}});
+        let a = rrset_lines(&public, "example.org.");
+        assert!(a.contains("192.0.2.1") && a.contains("60"), "{}", a);
+        assert_eq!(rrset_lines(&private, "example.org."), a);
+        let cname = serde_json::json!({"name": "c", "type": "Microsoft.Network/privateDnsZones/CNAME", "properties": {"ttl": 30, "cnameRecord": {"cname": "www.example.org"}}});
+        assert!(rrset_lines(&cname, "example.org.").contains("www.example.org."));
+    }
 }

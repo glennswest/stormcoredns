@@ -91,9 +91,9 @@ Client configuration, in order of precedence:
 2. `endpoint URL` with `tls CERT KEY CA` (client certificate). `endpoint
    https://…` without `tls` sends no credentials, skips certificate
    verification and logs a warning.
-3. otherwise kube-rs `Config::infer()`: `$KUBECONFIG` or `~/.kube/config` if
-   present, else the in-cluster service account and
-   `KUBERNETES_SERVICE_HOST`/`_PORT`.
+3. otherwise the in-cluster service account and
+   `KUBERNETES_SERVICE_HOST`/`_PORT`, as in CoreDNS. `$KUBECONFIG` and
+   `~/.kube/config` are not read (they were before #15).
 
 For a static pod with `hostNetwork` and no service account:
 

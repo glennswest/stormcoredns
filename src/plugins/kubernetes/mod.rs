@@ -718,7 +718,8 @@ async fn make_client(endpoint: Option<String>, tls: Option<(String, String, Stri
         }
         cfg
     } else {
-        kube::Config::infer().await.map_err(|e| anyhow!("kubernetes: no in-cluster or kubeconfig configuration: {}", e))?
+        // as in CoreDNS: no kubeconfig/endpoint means in-cluster, never $KUBECONFIG or ~/.kube/config
+        kube::Config::incluster().map_err(|e| anyhow!("kubernetes: in-cluster configuration: {}", e))?
     };
     kube::Client::try_from(config).map_err(|e| anyhow!("kubernetes client: {}", e))
 }

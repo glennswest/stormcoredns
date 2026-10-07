@@ -172,11 +172,15 @@ Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache
 - [x] tests, docs, CHANGELOG (through 811f088)
 - [ ] **Verification (also for #14 and #15):** the combined job (`tmp/job15.sh`) at 28a1490 (#25 closed) ran: workspace builds with no warnings, 81/82 tests pass, every #15 live check as intended (whoami SRV, local, hosts SERVFAIL/NODATA, acl EDE 15/17, template SERVFAIL, erratic SERVFAIL + 6-record AXFR, process_* + reload sha512, reload on edit). The one failure (black-lie NSEC next name lost `\000`, also before #10) is fixed in 811f088; the rerun got no slot twice (exit 75, stormcentral#505). Next: rerun, then stage `coredns`, close #10, #14, #15
 
+### In progress — #12 view metadata() (2026-10-07)
+CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first metadata plugin's `Collect` runs before that config's view filters, so `metadata()` sees the providers' labels.
+- [ ] `metadata` keeps a collector on its `ServerConfig`; `Server::lookup` collects before each filter; the plugin's own `serve_dns` only passes on
+- [ ] unit test (view filter on a provider label), live check, docs, CHANGELOG; sc-build (stormcentral#505); stage `coredns`
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #6 `/health` stuck 503 after a reload with lameduck
 - [ ] #7 a failed reload stops automatic reloads
 - [ ] #8 `:port` listeners IPv4-only after a reload
 - [ ] #11 secondary expire/retry/serial; task leaks on reload
-- [ ] #12 view metadata()
 - [ ] #20 signed zone files do not load (hickory parser)

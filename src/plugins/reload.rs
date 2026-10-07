@@ -5,7 +5,7 @@ use crate::plugin::Controller;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rand::Rng;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha512};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -15,7 +15,7 @@ static WATCHER: Lazy<Mutex<Option<CancellationToken>>> = Lazy::new(|| Mutex::new
 
 fn hash_file(p: &PathBuf) -> Option<String> {
     let data = std::fs::read(p).ok()?;
-    let mut h = Sha256::new();
+    let mut h = Sha512::new();
     h.update(&data);
     Some(hex::encode(h.finalize()))
 }
@@ -64,7 +64,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                 }
                 let start_hash = hash_file(&corefile).unwrap_or_default();
                 crate::metrics::RELOAD_VERSION_INFO.reset();
-                crate::metrics::RELOAD_VERSION_INFO.with_label_values(&["sha256", &start_hash]).set(1);
+                crate::metrics::RELOAD_VERSION_INFO.with_label_values(&["sha512", &start_hash]).set(1);
                 tokio::spawn(async move {
                     loop {
                         let j = rand::thread_rng().gen_range(0..=jitter.as_millis() as u64);

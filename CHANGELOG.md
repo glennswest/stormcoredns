@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#17)
+- **docs:** presentation: stormcos#79 is done (closed 2026-09-30). Checked in stormcos: `deploy/build-goldens.sh` and `deploy/manifests/80-coredns.yaml` say there is no upstream CoreDNS fallback, and the manifest notes #6 before any liveness probe. stormcentral#35 is still open and stays listed.
+
 ### 2026-10-07 (#8)
 - **fix:** A `:port` listener is dual stack (`[::]:port`) whenever the host can open IPv6 sockets, probed once on `[::]:0`. Before, the choice came from probe-binding the real port without SO_REUSEPORT. That failed while the old instance held the port during a reload (or when a privileged port could not be bound), so after any reload the listener was IPv4-only.
 - **docs:** architecture.md (also the 3s/5s stream timeout defaults from #15), integration.md, README and the presentation.

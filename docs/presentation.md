@@ -253,8 +253,10 @@ ignored are listed per plugin in docs/plugins.md.
 - **Planned:** fixes for the bugs on the next slide, cluster-DNS path first.
 - **Planned:** a `trace` exporter (OTLP/Zipkin), NSEC3 in `sign`,
   CDS/CDNSKEY in `sign`, and `kubernetes multicluster`.
-- **Planned elsewhere:** stormcentral#35 corrects the graph edges;
-  stormcos#79 removes stale claims about an upstream CoreDNS fallback.
+- **Planned elsewhere:** stormcentral#35 corrects the graph edges.
+- **Done elsewhere:** stormcos#79 (closed 2026-09-30) removed the stale
+  claims of an upstream CoreDNS fallback from `build-goldens.sh` and
+  `80-coredns.yaml`; the manifest now points at #6 before any liveness probe.
 
 ---
 

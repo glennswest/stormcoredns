@@ -204,10 +204,11 @@ Checked against CoreDNS v1.12.4: health's lameduck is `OnFinalShutdown` only; `/
 
 ### In progress — #7 a failed reload stops automatic reloads (2026-10-07)
 CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the same broken file) and keeps watching when the restart fails.
-- [ ] watcher keeps running after a request, with the new hash; stopped by its own instance's shutdown (no global replace)
-- [ ] `Instance::start`: a failing startup hook runs the half-started instance's shutdown hooks
-- [ ] process-wide state (`/ready` list, `plugin_enabled`) published only after a successful start; leftovers of a failed build (pending wiring, ready blocks) cleared at the next build
-- [ ] tests, live check (bad edit → old instance keeps serving → good edit reloads), docs, CHANGELOG; sc-build (stormcentral#97); stage `coredns`
+- [x] watcher keeps running after a request, with the new hash; stopped by its own instance's shutdown (no global replace)
+- [x] `Instance::start`: a failing startup hook runs the half-started instance's shutdown hooks
+- [x] process-wide state (`/ready` list, `plugin_enabled`) published only after a successful start; leftovers of a failed build (pending wiring, ready blocks) cleared at the next build
+- [x] test `reload_watcher_keeps_watching_and_a_failed_start_cleans_up`, docs, CHANGELOG — pushed
+- [ ] sc-build of `tmp/job_all.sh` (job15 + live8 + live6 + live7: bad edit → old serves → good edit reloads)
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

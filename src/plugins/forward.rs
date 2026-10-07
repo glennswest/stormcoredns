@@ -17,6 +17,10 @@
 //!     failover RCODE...
 //! }
 //! ```
+//! `next`: a reply with one of these rcodes goes to the next plugin when
+//! that plugin is another `forward` (as in CoreDNS); otherwise it is the
+//! answer. `failover` (not in CoreDNS 1.12) tries this forward's next
+//! upstream instead.
 
 use crate::dnsutil::{self, Upstream, UpstreamTransport};
 use crate::plugin::replacer::rcode_from_str;
@@ -389,6 +393,13 @@ impl Handler for ForwardHandler {
         if f.max_concurrent > 0 {
             f.concurrent.fetch_sub(1, Ordering::Relaxed);
         }
+        // `next RCODE...`: as in CoreDNS, hand the query to the next plugin
+        // only when that plugin is another forward; otherwise reply
+        if let Ok(Reply::Msg(m)) = &r {
+            if f.next_rcodes.contains(&m.response_code()) && next.name() == Some("forward") {
+                return next.serve(req).await;
+            }
+        }
         r
     }
 }
@@ -438,7 +449,7 @@ impl ForwardHandler {
                     }
                     p.fails.store(0, Ordering::Relaxed);
                     let rc = resp.response_code();
-                    if (f.next_rcodes.contains(&rc) || f.failover_rcodes.contains(&rc)) && i < list.len() {
+                    if f.failover_rcodes.contains(&rc) && i < list.len() {
                         last_reply = Some(resp);
                         continue;
                     }
@@ -693,6 +704,39 @@ mod tests {
         let start = Instant::now();
         assert!(h.forward(&mut req).await.is_err());
         assert!(start.elapsed() < Duration::from_secs(2), "took {:?}", start.elapsed());
+    }
+
+    /// A UDP upstream that answers every query with `rcode`.
+    fn fake_upstream(rcode: ResponseCode) -> SocketAddr {
+        let sock = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = sock.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok((n, from)) = sock.recv_from(&mut buf) {
+                let Ok(mut m) = Message::from_vec(&buf[..n]) else { continue };
+                m.set_message_type(MessageType::Response);
+                m.set_response_code(rcode);
+                let _ = sock.send_to(&m.to_vec().unwrap(), from);
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn next_hands_off_only_to_another_forward() {
+        use hickory_proto::serialize::binary::BinEncodable;
+        let nx = fake_upstream(ResponseCode::NXDomain);
+        let ok = fake_upstream(ResponseCode::NoError);
+        let first = ForwardHandler(Arc::new(ctl_parse(&format!("forward . {} {{\n next NXDOMAIN\n}}\n", nx)).unwrap()));
+        let second: Arc<dyn Handler> = Arc::new(ForwardHandler(Arc::new(ctl_parse(&format!("forward . {}\n", ok)).unwrap())));
+        let chain = vec![second];
+        let mut req = Request::for_test("example.org.", RecordType::A);
+        let r = first.serve_dns(&mut req, Next::new(&chain)).await.unwrap();
+        assert_eq!(r.rcode(), ResponseCode::NoError);
+        // no forward after it: the NXDOMAIN is the reply
+        let mut req = Request::for_test("example.org.", RecordType::A);
+        let r = first.serve_dns(&mut req, Next::new(&[])).await.unwrap();
+        assert_eq!(r.rcode(), ResponseCode::NXDomain);
     }
 
     #[test]

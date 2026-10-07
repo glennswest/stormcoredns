@@ -25,10 +25,11 @@ impl Handler for Whoami {
             IpAddr::V4(v4) => Record::from_rdata(qname.clone(), 0, RData::A(A(v4))),
             IpAddr::V6(v6) => Record::from_rdata(qname.clone(), 0, RData::AAAA(AAAA(v6))),
         };
-        let srv_name = Name::from_ascii(format!("_{}._{}.", req.port(), proto_label(req)))
+        // as in CoreDNS: `_<proto>.<qname>` with the client's port and target `.`
+        let srv_name = Name::from_ascii(format!("_{}.", proto_label(req)))
             .and_then(|n| n.append_domain(&qname))
             .unwrap_or_else(|_| qname.clone());
-        let srv = Record::from_rdata(srv_name, 0, RData::SRV(SRV::new(0, 0, req.port(), qname)));
+        let srv = Record::from_rdata(srv_name, 0, RData::SRV(SRV::new(0, 0, req.port(), Name::root())));
         m.add_additional(rr);
         m.add_additional(srv);
         Ok(Reply::Msg(m))
@@ -63,6 +64,13 @@ mod tests {
         let m = r.into_msg().unwrap();
         assert_eq!(m.additionals().len(), 2);
         assert!(matches!(m.additionals()[0].data(), Some(RData::A(_))));
-        assert_eq!(m.additionals()[1].name().to_ascii(), "_40000._udp.example.org.");
+        assert_eq!(m.additionals()[1].name().to_ascii(), "_udp.example.org.");
+        match m.additionals()[1].data() {
+            Some(RData::SRV(s)) => {
+                assert_eq!(s.port(), 40000);
+                assert!(s.target().is_root());
+            }
+            o => panic!("{:?}", o),
+        }
     }
 }

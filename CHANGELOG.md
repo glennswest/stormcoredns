@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### 2026-10-06 (#15)
+CoreDNS 1.12 differences from the docs audit, each checked against CoreDNS v1.12.4's source first.
+- **BREAKING:** `clouddns` takes `ZONE:PROJECT_ID:HOSTED_ZONE_NAME` as CoreDNS does. The old `PROJECT:ZONE[:ORIGIN]` form is rejected.
+- **fix:** Defaults now match CoreDNS: `bufsize` 1232, `cache` caches SERVFAIL for 5 s, `etcd` TTL 300 and SRV/MX priority 10, `timeouts` read 3 s and write 5 s.
+- **fix:** `forward next RCODE…` hands the query to the next plugin only when it is another `forward`, and does not retry this forward's upstreams. `failover` (not in CoreDNS 1.12) keeps doing that.
+- **fix:** `acl`: a rule with no matching policy passes the query to the next rule. Block and filter replies carry an EDE (15/17). The allowed counter is labelled `server`, `view`.
+- **fix:** `hosts`: an unknown name gets SERVFAIL (or falls through), a name with only the other address family is NODATA and never falls through, PTR is answered outside the zones, and an unknown PTR goes to the next plugin.
+- **fix:** `template`: a regex miss is SERVFAIL unless `fallthrough` covers the name. `rcode SERVFAIL` answers SERVFAIL. `ederror CODE [REASON]` adds an EDE. CNAME answers to A/AAAA are resolved through the server. A class/type ANY query matches every template, and an RR that does not parse is SERVFAIL.
+- **fix:** `dns64` returns NXDOMAIN unchanged (RFC 6147 5.1.2) and treats other errors as an empty answer.
+- **fix:** `whoami` SRV is `_<proto>.<qname>` with target `.`.
+- **fix:** `reload` hashes the parsed Corefile (imports expanded) with SHA-512, skips edits that do not parse, and reports `reload_version_info{hash="sha512"}`.
+- **fix:** `on` waits for commands without `&`, and a failed command fails its startup/shutdown hook.
+- **fix:** `kubernetes` without `kubeconfig`/`endpoint` uses only the in-cluster config, as CoreDNS does; `$KUBECONFIG` and `~/.kube/config` are no longer read.
+- **fix:** `azure` reads private DNS zones' camelCase record properties (`ttl`, `aRecords`, …).
+- **fix:** `erratic` answers every type itself (others SERVFAIL), sends a real small AXFR, counts queries from 0 and is ready only at query counts 3–4.
+- **fix:** `local` is a port of CoreDNS's plugin: `0.`/`127.`/`255.in-addr.arpa.` zones, `localhost.<domain>`, and `coredns_local_localhost_requests_total`. It no longer answers `ip6-localhost`, `localhost.localdomain` (now via the `localhost.` prefix rule) or `::1`'s reverse name.
+- **fix:** `route53` skips alias record sets, as CoreDNS does, and falls back to the shared credentials file (`AWS_SHARED_CREDENTIALS_FILE`, `AWS_PROFILE`).
+- **fix:** `dnstap` accepts host names in `tcp://`/`tls://` endpoints, and counts dropped messages and logs the count every second.
+- **fix:** `tsig`: a `secret NAME KEY` works with the client's algorithm.
+- **fix:** `tls client_auth request|require` take any client certificate unverified. The verify modes fall back to the system roots, so the CA is optional, as in Go.
+- **fix:** `timeouts` apply to DoH: read covers the TLS handshake and request body, write covers producing the answer, idle covers the time between requests.
+- **fix:** `debug` turns panic recovery off: a panic exits the process (status 2).
+- **fix:** `k8s_external headless` serves `<endpoint>.<service>.<namespace>.<zone>` and uses it as the SRV target. LoadBalancer hostname CNAMEs are resolved for A/AAAA.
+- **feat:** `process_*` metrics from `/proc/self`.
+- **docs:** plugins.md, README, integration.md and the presentation. What is left is filed: #21 (template Go functions), #22 (dnstap FORWARDER), #23 (route53 IRSA/ECS/IMDS), #24 (tsig MD5/SHA1/SHA224 and AXFR signing). Verified as not a difference: route53's SigV4 region (Route 53 signs in us-east-1). AXFR over DoH/DoQ/gRPC carries a single message in CoreDNS too.
+
 ### 2026-10-06 (#13)
 - **fix:** `file` wildcards follow RFC 4592: only `*.<closest encloser>` synthesizes an answer. Before, any `*.` ancestor did, so `x.b.c.example.org` got the apex wildcard even though `a.b.c.example.org` exists, where the answer should be NXDOMAIN. Existing names and empty non-terminals are computed once at load. NSEC proofs for NXDOMAIN now name the closest encloser's wildcard instead of the parent's.
 - **fix:** `reload` in a `file` stanza applies to that stanza's zones only. Before, the last `reload` in the server block applied to every stanza.

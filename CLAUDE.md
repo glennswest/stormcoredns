@@ -148,7 +148,9 @@ Fix here, item by item (commit each group):
 - [ ] syntax: `clouddns ZONE:PROJECT:HOSTED_ZONE`; `forward next` hands the reply to a following `forward` (upstream has no `failover`; ours stays as an extension)
 - [ ] behaviour: acl falls through to the next rule; hosts NXDOMAIN/fallthrough; template regex miss; dns64 leaves NXDOMAIN alone; whoami SRV; reload hash sha512; `on` waits without `&`; kubernetes in-cluster first; azure private casing; erratic AXFR; local zones; others as found
 Split into their own issues if large: Go template functions, dnstap FORWARDER_*, route53 IMDS/IRSA/profile, process_* metrics, rustls client_auth, AXFR over DoH/DoQ/gRPC
-- [ ] docs (plugins.md, README, presentation), CHANGELOG; sc-build; stage `coredns`
+- [x] All fixes pushed (through aa3c367); split out #21 template, #22 dnstap FORWARDER, #23 route53 IRSA/IMDS, #24 tsig MD5/SHA1/AXFR
+- [x] docs (plugins.md, README, integration.md, presentation), CHANGELOG
+- [ ] **Blocked:** sc-build verification. b51de9e (through erratic) was green (73+6 tests, no warnings); the full job at aa3c367 got no build slot four times in a row (exit 75, P3 starved, stormcentral#505); item proposed after it. Next: run `tmp/job15.sh`'s steps (full build + test + live check of whoami/local/hosts/acl EDE/template/erratic AXFR/process metrics/reload), fix what fails, stage `coredns`, close #15
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

@@ -61,12 +61,12 @@ async fn serve_conn<I>(srv: Arc<Server>, io: I, remote: SocketAddr, local: Socke
 where
     I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
 {
+    let idle = srv.idle_timeout;
     let svc = hyper::service::service_fn(move |req: Request<Incoming>| {
         let srv = srv.clone();
         let sni = sni.clone();
         async move { Ok::<_, std::convert::Infallible>(handle(srv, req, remote, local, sni).await) }
     });
-    let idle = srv.idle_timeout;
     let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
     // `timeouts idle`: how long a connection may wait for the next request's headers
     builder.http1().timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(idle);

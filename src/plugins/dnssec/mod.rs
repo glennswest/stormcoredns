@@ -343,7 +343,8 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hickory_proto::rr::rdata::{A, DS as DsRdata, NS, SOA};
+    use hickory_proto::rr::dnssec::rdata::DS as DsRdata;
+    use hickory_proto::rr::rdata::{A, NS, SOA};
 
     /// Answers by name prefix: `nx.` NXDOMAIN+SOA, `nodata.` NOERROR+SOA,
     /// `sub.` / `ds.` referrals (with a DS for `ds.`), else an A record.

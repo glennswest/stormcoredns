@@ -217,8 +217,8 @@ These are the gaps against CoreDNS, each tracked in an issue:
   that are accepted and ignored are listed per plugin in docs/plugins.md.
 - Open bugs: #6 (`/health` stuck at 503 after a reload), #7 (automatic
   reload stops after one failed reload), #8 (IPv4-only listener after a
-  reload), #9 (`loop` false positive), #11 (`secondary` timers), #12
-  (`view metadata()`), #20 (signed zone files).
+  reload), #9 (`loop` false positive), #11 (`secondary` timers), #20
+  (signed zone files).
 
 ## Layout
 

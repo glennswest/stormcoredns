@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#12)
+- **fix:** `view` `metadata('label')` works. As in CoreDNS (`core/dnsserver/server.go`), the server has a config's `metadata` plugin collect every provider's labels into the request before that config's view filter runs. The plugin's own handler only passes the query on, and the chain sees the same labels. Before, metadata was collected inside the chain, after the view was chosen, so `metadata()` was always empty.
+- **docs:** plugins.md (metadata, view), architecture.md, README and the presentation.
+
 ### 2026-10-07 (#10)
 Checked against CoreDNS v1.12.4 `plugin/dnssec`.
 - **fix:** Black-lie NSEC for NXDOMAIN (as well as NODATA) leaves the queried type out of its bitmap. Before, an NXDOMAIN turned into NOERROR claimed the type existed, and validators found that bogus. A query for NSEC keeps it in the bitmap and gets the NSEC as the answer.

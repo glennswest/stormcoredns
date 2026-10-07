@@ -79,7 +79,9 @@ algorithm: strip labels from the query name until a configured zone
 matches, then take the first config whose `view` expression accepts the
 request (view configs sort ahead of the catch-all); if none accepts, keep
 stripping; no zone at all is REFUSED. View filters run here, before the
-chain, so `metadata()` in a view expression sees nothing (#12).
+chain. As in CoreDNS, a config's `metadata` plugin collects the providers'
+labels into the request before its filter runs, so `metadata()` in a view
+expression works, and the chain sees the same labels.
 
 Listeners bind with `SO_REUSEPORT` (UDP sockets also get 4 MiB buffers;
 IPv6 sockets are dual-stack), so a reload starts the new instance before

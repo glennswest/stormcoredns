@@ -69,9 +69,13 @@ impl Handler for Dns64 {
         }
         let mut r = next.serve(req).await?;
         let Some(m) = r.msg_mut() else { return Ok(r) };
+        // RFC 6147 5.1.2: NXDOMAIN is returned unchanged; any other error
+        // counts as an empty answer (as in CoreDNS)
+        if m.response_code() == ResponseCode::NXDomain {
+            return Ok(r);
+        }
         let has_aaaa = m.answers().iter().any(|a| a.record_type() == RecordType::AAAA);
-        let negative = matches!(m.response_code(), ResponseCode::NoError | ResponseCode::NXDomain) && !has_aaaa;
-        if !negative && !self.translate_all {
+        if has_aaaa && !self.translate_all {
             return Ok(r);
         }
         // fetch the A records through our own chain

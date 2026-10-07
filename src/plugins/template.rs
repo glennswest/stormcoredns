@@ -7,9 +7,13 @@
 //!     additional RR
 //!     authority RR
 //!     rcode CODE
+//!     ederror CODE [REASON]
 //!     fallthrough [ZONES...]
 //! }
 //! ```
+//! As in CoreDNS: a query in the zone whose class/type match but whose
+//! name misses every regex gets SERVFAIL unless `fallthrough` covers it;
+//! CNAME answers to A/AAAA queries are resolved through the server.
 //! Supported template fields: `{{ .Name }}`, `{{ .Zone }}`, `{{ .Class }}`,
 //! `{{ .Type }}`, `{{ .Remote }}`, `{{ .Message.Id }}`, `{{ index .Match N }}`,
 //! `{{ .Group.NAME }}`, `{{ .Meta "label" }}`.
@@ -19,8 +23,9 @@ use crate::plugin::replacer::rcode_from_str;
 use crate::plugin::{error, Controller, DnsResult, Handler, Next, Reply, Request};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use hickory_proto::op::ResponseCode;
-use hickory_proto::rr::{DNSClass, Name, Record, RecordType};
+use hickory_proto::op::{Edns, ResponseCode};
+use hickory_proto::rr::rdata::opt::EdnsOption;
+use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_proto::serialize::txt::Parser;
 use once_cell::sync::Lazy;
 use prometheus::IntCounterVec;
@@ -54,6 +59,8 @@ pub struct Template {
     pub authority: Vec<String>,
     pub rcode: ResponseCode,
     pub fallthrough: Option<Vec<String>>,
+    /// `ederror CODE [REASON]`: an Extended DNS Error added to the reply.
+    pub ederror: Option<(u16, String)>,
 }
 
 /// Values available to a template.
@@ -125,11 +132,15 @@ pub struct TemplateHandler {
 }
 
 impl Template {
+    // a query of class/type ANY matches every template, as in CoreDNS
     fn class_matches(&self, c: DNSClass) -> bool {
-        self.class.map(|x| x == c).unwrap_or(true)
+        c == DNSClass::ANY || self.class.map(|x| x == c).unwrap_or(true)
     }
     fn type_matches(&self, t: RecordType) -> bool {
-        self.qtype.map(|x| x == t).unwrap_or(true)
+        t == RecordType::ANY || self.qtype.map(|x| x == t).unwrap_or(true)
+    }
+    fn falls_through(&self, name: &str) -> bool {
+        self.fallthrough.as_ref().map(|ft| crate::plugin::zones_match(ft, name).is_some()).unwrap_or(false)
     }
     fn zone_match<'z>(&'z self, name: &str) -> Option<&'z str> {
         crate::plugin::zones_match(&self.zones, name)
@@ -168,52 +179,76 @@ impl Handler for TemplateHandler {
                 }
             }
             if !matched {
-                continue;
+                // as in CoreDNS: a regex miss is SERVFAIL unless fallthrough covers the name
+                if t.falls_through(&name) {
+                    continue;
+                }
+                return Ok(Reply::Rcode(ResponseCode::ServFail));
             }
             let class_s = t.class.map(|c| c.to_string()).unwrap_or_else(|| "ANY".into());
             let type_s = t.qtype.map(|c| c.to_string()).unwrap_or_else(|| "ANY".into());
             MATCHES.with_label_values(&[&req.server, &req.zone, &req.view, &class_s, &type_s]).inc();
+            if t.rcode == ResponseCode::ServFail {
+                return Ok(Reply::Rcode(ResponseCode::ServFail));
+            }
             let data = Data { req, zone, name: name.clone(), matches, groups };
             let mut m = req.new_reply();
             m.set_authoritative(true);
             m.set_response_code(t.rcode);
-            let mut failed = false;
+            let mut chased: Vec<Record> = Vec::new();
             for (section, tpls) in [("answer", &t.answer), ("additional", &t.additional), ("authority", &t.authority)] {
                 for tpl in tpls {
                     let rendered = match render(tpl, &data) {
                         Ok(r) => r,
                         Err(e) => {
                             FAILURES.with_label_values(&[&req.server, &req.zone, &req.view, &class_s, &type_s, section, tpl]).inc();
-                            return Err(error("template", e));
+                            return Err(error("template", e).with_rcode(ResponseCode::ServFail));
                         }
                     };
                     let recs = match parse_rr(&rendered, zone) {
                         Ok(r) => r,
                         Err(e) => {
                             RR_FAILURES.with_label_values(&[&req.server, &req.zone, &req.view, &class_s, &type_s, section, tpl]).inc();
-                            failed = true;
-                            tracing::warn!("plugin/template: {}", e);
-                            continue;
+                            return Err(error("template", e).with_rcode(ResponseCode::ServFail));
                         }
                     };
                     for r in recs {
                         match section {
-                            "answer" => m.add_answer(r),
-                            "additional" => m.add_additional(r),
-                            _ => m.add_name_server(r),
-                        };
+                            "answer" => {
+                                // CNAME answers to A/AAAA are resolved through the server, as CoreDNS's upstream does
+                                if matches!(req.qtype(), RecordType::A | RecordType::AAAA) {
+                                    if let Some(RData::CNAME(c)) = r.data() {
+                                        if let Ok(up) = crate::server::self_lookup(req, c.0.clone(), req.qtype()).await {
+                                            if up.truncated() {
+                                                m.set_truncated(true);
+                                            }
+                                            chased.extend(up.answers().iter().cloned());
+                                        }
+                                    }
+                                }
+                                m.add_answer(r);
+                                for c in chased.drain(..) {
+                                    m.add_answer(c);
+                                }
+                            }
+                            "additional" => {
+                                m.add_additional(r);
+                            }
+                            _ => {
+                                m.add_name_server(r);
+                            }
+                        }
                     }
                 }
             }
-            if failed && m.answers().is_empty() {
-                return Err(error("template", anyhow!("templated RRs failed to parse")));
-            }
-            if m.answers().is_empty() && t.rcode == ResponseCode::NoError {
-                if let Some(ft) = &t.fallthrough {
-                    if crate::plugin::zones_match(ft, &name).is_some() {
-                        return next.serve(req).await;
-                    }
-                }
+            if let Some((code, reason)) = &t.ederror {
+                let mut e = m.extensions().clone().unwrap_or_else(Edns::new);
+                e.set_max_payload(4096);
+                e.set_dnssec_ok(true);
+                let mut data = code.to_be_bytes().to_vec();
+                data.extend_from_slice(reason.as_bytes());
+                e.options_mut().insert(EdnsOption::Unknown(15, data));
+                m.set_edns(e);
             }
             return Ok(Reply::Msg(m));
         }
@@ -237,7 +272,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
             t => Some(dnsutil::record_type_from_str(t).map_err(|e| c.errf(e))?),
         };
         let zones = c.origins_from_args_or_server_block(&args[2..])?;
-        let mut t = Template { zones, class, qtype, regex: Vec::new(), answer: Vec::new(), additional: Vec::new(), authority: Vec::new(), rcode: ResponseCode::NoError, fallthrough: None };
+        let mut t = Template { zones, class, qtype, regex: Vec::new(), answer: Vec::new(), additional: Vec::new(), authority: Vec::new(), rcode: ResponseCode::NoError, fallthrough: None, ederror: None };
         while c.next_block() {
             match c.val() {
                 "match" => {
@@ -264,7 +299,12 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     let _ = c.remaining_args();
                 }
                 "ederror" => {
-                    let _ = c.remaining_args();
+                    let a = c.remaining_args();
+                    if a.is_empty() || a.len() > 2 {
+                        return Err(c.arg_err());
+                    }
+                    let code: u16 = a[0].parse().map_err(|_| c.errf(format!("error parsing extended DNS error code {}", a[0])))?;
+                    t.ederror = Some((code, a.get(1).cloned().unwrap_or_default()));
                 }
                 o => return Err(c.errf(format!("unknown property '{}'", o))),
             }
@@ -294,6 +334,7 @@ mod tests {
             authority: vec![],
             rcode: ResponseCode::NoError,
             fallthrough: None,
+            ederror: None,
         };
         let h = TemplateHandler { templates: vec![t] };
         let mut req = Request::for_test("ip-10-1-2-3.example.", RecordType::A);
@@ -315,11 +356,39 @@ mod tests {
             authority: vec!["invalid. 60 IN SOA ns.invalid. hostmaster.invalid. (1 60 60 60 60)".into()],
             rcode: ResponseCode::NXDomain,
             fallthrough: None,
+            ederror: None,
         };
         let h = TemplateHandler { templates: vec![t] };
         let mut req = Request::for_test("foo.invalid.", RecordType::AAAA);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
         assert_eq!(m.response_code(), ResponseCode::NXDomain);
         assert_eq!(m.name_servers().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn regex_miss_is_servfail_unless_fallthrough() {
+        let mk = |ft: Option<Vec<String>>| Template {
+            zones: vec!["example.".into()],
+            class: None,
+            qtype: None,
+            regex: vec![Regex::new(r"^ok\.example\.$").unwrap()],
+            answer: vec!["{{ .Name }} 60 IN A 192.0.2.1".into()],
+            additional: vec![],
+            authority: vec![],
+            rcode: ResponseCode::NoError,
+            fallthrough: ft,
+            ederror: Some((17, "nope".into())),
+        };
+        let h = TemplateHandler { templates: vec![mk(None)] };
+        let mut req = Request::for_test("other.example.", RecordType::A);
+        assert!(matches!(h.serve_dns(&mut req, Next::new(&[])).await.unwrap(), Reply::Rcode(ResponseCode::ServFail)));
+        let h = TemplateHandler { templates: vec![mk(Some(vec![".".into()]))] };
+        let mut req = Request::for_test("other.example.", RecordType::A);
+        assert!(h.serve_dns(&mut req, Next::new(&[])).await.is_err(), "falls through to the (empty) chain");
+        // a match carries the EDE
+        let mut req = Request::for_test("ok.example.", RecordType::A);
+        let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
+        let ede = m.extensions().as_ref().unwrap().options().get(hickory_proto::rr::rdata::opt::EdnsCode::from(15)).cloned();
+        assert_eq!(ede, Some(EdnsOption::Unknown(15, b"\x00\x11nope".to_vec())));
     }
 }

@@ -72,9 +72,12 @@ It **lists and watches**, cluster-wide:
   `namespace_labels` selectors applied.
 - endpoints (unless `noendpoints`). At startup it asks for the
   `discovery.k8s.io/v1` resource list: if that list contains `endpointslices`,
-  it watches EndpointSlices, otherwise core `endpoints`. rustkube therefore
-  does not need EndpointSlices. If discovery fails for any reason, it falls
-  back to core Endpoints for the life of the instance (#14).
+  it watches EndpointSlices, otherwise core `endpoints` (also when the
+  group answers 404). rustkube therefore does not need EndpointSlices.
+  CoreDNS 1.12 itself only watches EndpointSlices. Discovery has a 5 s
+  timeout, and a transient error (timeout, connection error, 5xx) is retried
+  in the background with backoff up to 30 s, so it never settles on core
+  Endpoints by accident (#14).
 - `core/v1` `pods`, only with `pods verified`. `pods insecure` answers from
   the name alone. `autopath @kubernetes` needs `pods verified` to return
   anything, but it does not start a pod watch itself.
@@ -89,8 +92,9 @@ Client configuration, in order of precedence:
 
 1. `kubeconfig FILE [CONTEXT]`
 2. `endpoint URL` with `tls CERT KEY CA` (client certificate). `endpoint
-   https://…` without `tls` sends no credentials, skips certificate
-   verification and logs a warning.
+   https://…` without `tls` sends no credentials and verifies the server
+   against the system roots, as in CoreDNS. `tls` without `endpoint`, or
+   alongside `kubeconfig`, is unused, and a warning is logged.
 3. otherwise the in-cluster service account and
    `KUBERNETES_SERVICE_HOST`/`_PORT`, as in CoreDNS. `$KUBECONFIG` and
    `~/.kube/config` are not read (they were before #15).
@@ -106,11 +110,13 @@ kubernetes cluster.local in-addr.arpa ip6.arpa {
 }
 ```
 
-`/ready` turns 200 when the initial list of every watched kind has completed.
-Until then, cluster names get **NXDOMAIN** rather than SERVFAIL (#14), so a
-bootstrapper should wait on `/ready` before using DNS. If the client cannot be
-built, or discovery errors at startup, the process exits (or, on reload, keeps
-the old instance).
+As in CoreDNS, startup waits for the initial list of every watched kind,
+for up to `startup_timeout` (default 5 s), before the server answers. On a
+reload the old instance keeps serving meanwhile. If the API has not synced by
+then, the server starts anyway and cluster names get NXDOMAIN until it does,
+as in CoreDNS, so a bootstrapper should still wait on `/ready`, which turns
+200 when every watch has synced. If the client cannot be built, the process
+exits (or, on a reload, keeps the old instance).
 
 RBAC: list/watch on `services`, `endpoints`, `pods`, `namespaces` and
 `discovery.k8s.io/endpointslices`. This is the ClusterRole in

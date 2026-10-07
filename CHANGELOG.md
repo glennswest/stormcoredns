@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#14)
+Checked against CoreDNS v1.12.4 first. CoreDNS does not answer SERVFAIL before the API syncs: its startup hook waits for the sync, up to `startup_timeout`.
+- **fix:** `kubernetes` startup waits for every watch to sync, up to `startup_timeout DURATION` (new option, default 5s), as CoreDNS does, so a new server no longer answers NXDOMAIN from empty caches in its first moments. On a reload the old instance keeps serving meanwhile.
+- **fix:** `kubernetes` EndpointSlice discovery has a 5s timeout. A transient error (timeout, connection error, 5xx) is retried in the background with backoff, instead of settling on core Endpoints for the life of the instance. A 404 for the group still selects core Endpoints.
+- **fix:** `kubernetes`: removing or updating one EndpointSlice no longer drops a pod IP from the reverse (PTR) index while another slice of the same service still has it.
+- **fix:** `kubernetes endpoint https://…` without `tls` verifies the API server against the system roots, as CoreDNS does, instead of accepting any certificate. `tls` without `endpoint` (or with `kubeconfig`) logs a warning that it is unused.
+- **fix:** `route53`/`azure`/`clouddns` report ready only once every zone has loaded at least once. Before, the first refresh marked them ready even if every fetch failed.
+- **docs:** integration.md, plugins.md, README and the presentation. Unlike CoreDNS, the cloud backends still start without their zones and report it on `/ready`.
+
 ### 2026-10-06 (#15)
 CoreDNS 1.12 differences from the docs audit, each checked against CoreDNS v1.12.4's source first.
 - **BREAKING:** `clouddns` takes `ZONE:PROJECT_ID:HOSTED_ZONE_NAME` as CoreDNS does. The old `PROJECT:ZONE[:ORIGIN]` form is rejected.

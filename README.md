@@ -94,7 +94,7 @@ An unknown flag prints `flag provided but not defined` and exits 2.
 | `AZURE_TENANT_ID` `AZURE_CLIENT_ID` `AZURE_CLIENT_SECRET` `AZURE_SUBSCRIPTION_ID` | `azure` defaults |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `clouddns` credentials fallback |
 | `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` `AWS_SESSION_TOKEN`, `HOME` | `route53` credentials |
-| `KUBERNETES_SERVICE_HOST`/`_PORT`, `KUBECONFIG` | `kubernetes` client, via kube-rs `Config::infer()` when neither `endpoint` nor `kubeconfig` is set |
+| `KUBERNETES_SERVICE_HOST`/`_PORT` | `kubernetes` in-cluster client when neither `endpoint` nor `kubeconfig` is set (`KUBECONFIG` is not read, as in CoreDNS) |
 
 ### Server-block keys and transports
 
@@ -218,7 +218,7 @@ These are the gaps against CoreDNS, each tracked in an issue:
 - Open bugs: #6 (`/health` stuck at 503 after a reload), #7 (automatic
   reload stops after one failed reload), #8 (IPv4-only listener after a
   reload), #9 (`loop` false positive), #11 (`secondary` timers), #12
-  (`view metadata()`), #14 (readiness edge cases), #20 (signed zone files).
+  (`view metadata()`), #20 (signed zone files).
 
 ## Layout
 

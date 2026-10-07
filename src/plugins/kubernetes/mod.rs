@@ -512,11 +512,11 @@ impl Handler for KubernetesHandler {
             return None;
         }
         let svc = k.store.service(namespace, service)?;
-        let headless_ips = if svc.headless { k.ready_endpoints(&svc).into_iter().flat_map(|e| e.ips).collect() } else { Vec::new() };
+        let endpoints = if svc.headless { k.ready_endpoints(&svc).into_iter().map(|e| (k.endpoint_hostname(&e), e.ips)).collect() } else { Vec::new() };
         Some(crate::plugin::ExternalService {
             ips: svc.external_ips.clone(),
             hostnames: svc.external_hosts.clone(),
-            headless_ips,
+            endpoints,
             ports: svc.ports.iter().map(|p| (p.name.clone(), p.protocol.clone(), p.port)).collect(),
         })
     }

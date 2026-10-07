@@ -108,8 +108,9 @@ pub struct ExternalService {
     pub ips: Vec<std::net::IpAddr>,
     /// LoadBalancer ingress hostnames.
     pub hostnames: Vec<String>,
-    /// Ready endpoint IPs of a headless service (for `k8s_external headless`).
-    pub headless_ips: Vec<std::net::IpAddr>,
+    /// Ready endpoints of a headless service, (hostname label, IPs), for
+    /// `k8s_external headless` (`<endpoint>.<service>.<namespace>.<zone>`).
+    pub endpoints: Vec<(String, Vec<std::net::IpAddr>)>,
     /// (name, protocol, port)
     pub ports: Vec<(String, String, u16)>,
 }

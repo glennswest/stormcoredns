@@ -127,8 +127,9 @@ pub fn group_servers(configs: &[Arc<ServerConfig>]) -> Result<Vec<Arc<Server>>> 
         let cfgs = groups.remove(&k).unwrap();
         let mut zones: HashMap<String, Vec<ZoneEntry>> = HashMap::new();
         let mut tls = None;
-        let mut read_timeout = Duration::from_secs(2);
-        let mut write_timeout = Duration::from_secs(2);
+        // CoreDNS defaults (core/dnsserver/server.go)
+        let mut read_timeout = Duration::from_secs(3);
+        let mut write_timeout = Duration::from_secs(5);
         let mut idle_timeout = Duration::from_secs(10);
         let mut num_sockets = 1;
         for c in cfgs {

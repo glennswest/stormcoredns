@@ -43,7 +43,8 @@ pub async fn run_https(srv: Arc<Server>, listener: TcpListener, cancel: Cancella
         tokio::spawn(async move {
             let _ = stream.set_nodelay(true);
             match acceptor {
-                Some(acc) => match acc.accept(stream).await {
+                // `timeouts read` bounds the handshake, as Go's ReadTimeout does
+                Some(acc) => match tokio::time::timeout(srv.read_timeout, acc.accept(stream)).await.unwrap_or_else(|_| Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "handshake timeout"))) {
                     Ok(tls) => {
                         let sni = tls.get_ref().1.server_name().map(|s| s.to_string());
                         serve_conn(srv, TokioIo::new(tls), remote, local, sni, cancel).await
@@ -65,7 +66,10 @@ where
         let sni = sni.clone();
         async move { Ok::<_, std::convert::Infallible>(handle(srv, req, remote, local, sni).await) }
     });
-    let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    let idle = srv.idle_timeout;
+    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    // `timeouts idle`: how long a connection may wait for the next request's headers
+    builder.http1().timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(idle);
     let conn = builder.serve_connection(io, svc);
     tokio::pin!(conn);
     tokio::select! {
@@ -111,9 +115,10 @@ async fn handle(srv: Arc<Server>, req: Request<Incoming>, remote: SocketAddr, lo
             if !ct.starts_with(MIME) {
                 return status(&srv, StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type");
             }
-            match req.into_body().collect().await {
-                Ok(c) => c.to_bytes().to_vec(),
-                Err(_) => return status(&srv, StatusCode::BAD_REQUEST, "bad body"),
+            match tokio::time::timeout(srv.read_timeout, req.into_body().collect()).await {
+                Ok(Ok(c)) => c.to_bytes().to_vec(),
+                Ok(Err(_)) => return status(&srv, StatusCode::BAD_REQUEST, "bad body"),
+                Err(_) => return status(&srv, StatusCode::REQUEST_TIMEOUT, "read timeout"),
             }
         }
         _ => return status(&srv, StatusCode::METHOD_NOT_ALLOWED, "method not allowed"),
@@ -122,7 +127,11 @@ async fn handle(srv: Arc<Server>, req: Request<Incoming>, remote: SocketAddr, lo
         return status(&srv, StatusCode::BAD_REQUEST, "bad message size");
     }
     // Use the X-Forwarded-For remote when behind a proxy? CoreDNS does not; neither do we.
-    let resp = srv.serve_bytes(&query, remote, local, Proto::Https, Some(info), sni).await;
+    // `timeouts write` bounds producing the answer, as Go's WriteTimeout does
+    let resp = match tokio::time::timeout(srv.write_timeout, srv.serve_bytes(&query, remote, local, Proto::Https, Some(info), sni)).await {
+        Ok(r) => r,
+        Err(_) => return status(&srv, StatusCode::SERVICE_UNAVAILABLE, "write timeout"),
+    };
     match resp {
         Some(bytes) => {
             // cache-control from the minimal TTL in the answer

@@ -126,7 +126,8 @@ the old one stops, and a Corefile that fails to load leaves the old instance
 running (`Restart failed: …`, `coredns_reload_failed_total`). SIGINT and
 SIGTERM shut down: `health`'s lameduck runs first (DNS keeps answering,
 `/health` stays 200, `/ready` turns 503), and then the listeners close. A
-reload never waits for lameduck. One reload bug is open, #7.
+reload never waits for lameduck. A failed reload keeps the old instance,
+which keeps watching for the next edit.
 
 ## Ports and endpoints
 
@@ -216,7 +217,7 @@ These are the gaps against CoreDNS, each tracked in an issue:
   FORWARDER messages (#22), `route53` has no IRSA/ECS/IMDS credentials (#23),
   `tsig` has only HMAC-SHA256/384/512 and does not sign AXFR (#24). Options
   that are accepted and ignored are listed per plugin in docs/plugins.md.
-- Open bugs: #7 (automatic reload stops after one failed reload), #20 (signed zone files).
+- Open bugs: #20 (signed zone files).
 
 ## Layout
 

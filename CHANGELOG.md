@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 2026-10-07 (#7)
+Checked against CoreDNS v1.12.4 `plugin/reload`.
+- **fix:** The `reload` watcher keeps watching after it requests a reload, as CoreDNS does. It takes the new hash first, so the same broken file is not retried. Before, it exited after the request, so a failed reload left the old instance running with no watcher until SIGHUP. Each instance's watcher now stops with that instance, with no process-wide replace.
+- **fix:** When a startup hook fails, the half-started instance's shutdown hooks run, so the watchers and refresh tasks it started are stopped.
+- **fix:** `/ready`'s plugin list and `coredns_plugin_enabled` are published only after the new instance has started. A failed start leaves them on the running instance. Wiring and `ready` registrations left over by a failed build are cleared before the next build.
+- **docs:** plugins.md, architecture.md, integration.md (also the SHA-512 hash), README and the presentation.
+
 ### 2026-10-07 (#6)
 Checked against CoreDNS v1.12.4 `plugin/health` and `plugin/ready`.
 - **fix:** `health` lameduck runs only at process exit (a new final-shutdown hook kind, CoreDNS's `OnFinalShutdown`), never on a reload. Before, every reload ran the old instance's lameduck. That set `/health` to 503 for good, so a liveness probe would kill the pod, and it delayed each reload by the lameduck period.

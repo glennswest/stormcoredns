@@ -22,7 +22,7 @@ left is tracked in #21–#24. #16 covered the options that are accepted but igno
 | tls | full | `tls CERT KEY [CA] { client_auth … }`, as Go's `tls.ClientAuthType`: `request`/`require` take any client certificate unverified, `verify_if_given`/`require_and_verify` verify against the CA (or the system roots without one). Serves tls://, https://, quic:// and grpc:// |
 | timeouts | full | `read`/`write`/`idle` (1s–24h). Defaults 3s/5s/10s, as in CoreDNS. TCP, DoT and DoQ; DoH applies read to the TLS handshake and request body, write to producing the answer, idle between requests. gRPC ignores them, as in CoreDNS |
 | multisocket | full | Default is the CPU count, with no upper bound. SO_REUSEPORT is set on every socket either way |
-| reload | full | Default 30s interval, 15s jitter (minimum 2s/1s). The parsed Corefile (imports expanded) is hashed with SHA-512 every 15–30 s, as in CoreDNS; an edit that does not parse is skipped. `reload_version_info{hash="sha512"}`. Bugs: #6, #7 |
+| reload | full | Default 30s interval, 15s jitter (minimum 2s/1s). The parsed Corefile (imports expanded) is hashed with SHA-512 every 15–30 s, as in CoreDNS; an edit that does not parse is skipped. `reload_version_info{hash="sha512"}`. After a reload request the watcher keeps watching with the new hash, so a failed reload (old instance kept) does not stop automatic reloads; it stops with its instance |
 | nsid | full | Default is the hostname |
 | bufsize | full | 512–4096; default 1232 |
 | bind | full | Addresses and interface names (getifaddrs), plus `except`. An interface also yields its IPv6 link-local addresses, which have no scope ID |

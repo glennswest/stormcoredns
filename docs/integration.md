@@ -150,10 +150,10 @@ Nothing DNS-specific is needed. The `kube-dns` Service name and the
 
 ## Operating it
 
-- **Reload.** Edit the ConfigMap. The `reload` plugin checks the Corefile's
-  SHA-256 every 15–30 s. SIGHUP and SIGUSR1 also reload. A bad Corefile keeps
-  the old instance and logs `Restart failed: …`. However, automatic reloads
-  then stop until a signal arrives (#7).
+- **Reload.** Edit the ConfigMap. The `reload` plugin checks the parsed
+  Corefile's SHA-512 every 15–30 s. SIGHUP and SIGUSR1 also reload. A bad
+  Corefile keeps the old instance and logs `Restart failed: …`; as in CoreDNS
+  the same broken file is not retried, and the next edit is picked up (#7).
 - **Logs.** Logs go to stdout. `STORMCOREDNS_LOG`/`RUST_LOG` set the filter.
   Add `log` to the block for per-query lines in CoreDNS's common format.
 - **Identify the binary.** `/coredns -version` prints `stormcoredns-<ver>

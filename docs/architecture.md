@@ -119,8 +119,12 @@ signals the main loop; SIGHUP and SIGUSR1 do the same. The main loop runs the ol
 reload), starts a new instance and stops the old one; a failed reload keeps
 the old instance, increments `coredns_reload_failed_total` and runs its
 `restart_failed` hooks. Both kinds run on every attempt (no plugin
-registers one today). Open bug in this
-path: #7 (the watcher does not re-arm after a failed reload).
+registers one today). The `reload` watcher belongs to its instance: it keeps
+watching after a request (with the new hash, so a broken file is not
+retried) and stops with the instance, so after a failed reload the old one
+still picks up the next edit (#7). If a startup hook fails, the half-started
+instance's shutdown hooks run; `/ready`'s plugin list and `plugin_enabled`
+are published only after a successful start.
 
 The HTTP endpoints (`health`, `ready`, `prometheus`, `pprof`) share a
 registry keyed by address; on reload the new instance takes the listener

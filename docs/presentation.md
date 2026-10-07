@@ -265,12 +265,10 @@ ignored are listed per plugin in docs/plugins.md.
 **Status:** v0.1.1. It is the cluster DNS in stormcos releases, and 54 unit
 tests pass under `sc-build`. The docs were rewritten from the code (#3).
 
-These bugs are open on the path stormcos runs (`lameduck 5s`, `reload`,
-`loop`):
-
-| # | effect |
-|---|---|
-| #7 | one failed reload stops automatic reloads until SIGHUP |
+The bugs found on the path stormcos runs (`lameduck 5s`, `reload`, `loop`)
+are fixed, pending a release: #6 (`/health` at 503 after a reload), #7
+(automatic reloads stopping after a failed one), #8 (IPv4-only after a
+reload), #14 (startup before the API synced), #18 (`loop` false positive).
 
 Also open: #21–#24
 CoreDNS differences, #20 signed zone files, #5 tests.

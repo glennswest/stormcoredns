@@ -178,7 +178,7 @@ pub fn reverse(ip: IpAddr) -> String {
 
 /// Short text for a reply, for test details.
 pub fn show(m: &Message) -> String {
-    let answers: Vec<String> = m.answers().iter().map(|r| format!("{} {}", r.record_type(), r.data().map(|d| d.to_string()).unwrap_or_default())).collect();
+    let answers: Vec<String> = m.answers().iter().map(|r| format!("{} {} ttl={}", r.record_type(), r.data().map(|d| d.to_string()).unwrap_or_default(), r.ttl())).collect();
     format!("{:?}{} [{}]", rcode(m), if m.truncated() { " TC" } else { "" }, answers.join(", "))
 }
 

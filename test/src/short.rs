@@ -70,14 +70,40 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     })
     .await?;
 
+    // A cache in front of the plugin (`cache 30` in stormcos's Corefile) may
+    // keep the last answer for its TTL, as upstream CoreDNS does, so the
+    // name has PROGRAM plus that TTL to go. An answer whose TTL went back up
+    // after the delete was refilled from the plugin: the plugin itself still
+    // has the Service.
+    let ttl = match dns::query_udp_retry(server, &fqdn, RecordType::A, Duration::from_secs(2)).await {
+        Ok(m) => m.answers().iter().map(|r| r.ttl()).max().unwrap_or(0),
+        Err(_) => 0,
+    };
     kube.delete_service(name).await?;
     rep.check("service-deleted", async {
-        let (m, took, ok) = dns::wait_for(server, &fqdn, RecordType::A, Proto::Udp, PROGRAM, |m| dns::rcode(m) == ResponseCode::NXDomain).await;
-        if ok {
-            pass(format!("{fqdn} NXDOMAIN {} ms after the delete", took.as_millis()))
-        } else {
-            fail(format!("{fqdn} still resolves {PROGRAM:?} after the delete: {}", m.map(|m| dns::show(&m)).unwrap_or_else(|| "no reply".into())))
+        let within = PROGRAM + Duration::from_secs(u64::from(ttl));
+        let start = std::time::Instant::now();
+        let (mut last, mut prev_ttl, mut refills) = (None, u32::MAX, Vec::new());
+        loop {
+            if let Ok(m) = dns::query(server, &fqdn, RecordType::A, Proto::Udp, None, Duration::from_secs(2)).await {
+                if dns::rcode(&m) == ResponseCode::NXDomain {
+                    return pass(format!("{fqdn} NXDOMAIN {} ms after the delete (answer TTL was {ttl}s)", start.elapsed().as_millis()));
+                }
+                if let Some(t) = m.answers().iter().map(|r| r.ttl()).max() {
+                    if t > prev_ttl {
+                        refills.push(start.elapsed().as_secs());
+                    }
+                    prev_ttl = t;
+                }
+                last = Some(m);
+            }
+            if start.elapsed() >= within {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
+        let why = if refills.is_empty() { "no refill seen".to_string() } else { format!("refilled from the plugin at {refills:?} s, so the plugin still has the Service") };
+        fail(format!("{fqdn} still resolves {within:?} after the delete (answer TTL {ttl}s; {why}): {}", last.map(|m| dns::show(&m)).unwrap_or_else(|| "no reply".into())))
     })
     .await?;
     Ok(())

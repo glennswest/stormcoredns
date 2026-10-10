@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-10-10 (#5)
+- **test:** First in-cluster runs on C2NR0Q2. `short`'s `service-deleted` now waits 30 s plus the TTL of the last answer, since a `cache` in front of the plugin may keep the answer that long, as upstream does. A failure says whether the plugin refilled the answer after the delete. Answers in test output show their TTL.
+
 ### 2026-10-07 (#7)
 Checked against CoreDNS v1.12.4 `plugin/reload`.
 - **fix:** The `reload` watcher keeps watching after it requests a reload, as CoreDNS does. It takes the new hash first, so the same broken file is not retried. Before, it exited after the request, so a failed reload left the old instance running with no watcher until SIGHUP. Each instance's watcher now stops with that instance, with no process-wide replace.

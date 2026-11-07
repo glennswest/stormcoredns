@@ -724,7 +724,6 @@ mod tests {
 
     #[tokio::test]
     async fn next_hands_off_only_to_another_forward() {
-        use hickory_proto::serialize::binary::BinEncodable;
         let nx = fake_upstream(ResponseCode::NXDomain);
         let ok = fake_upstream(ResponseCode::NoError);
         let first = ForwardHandler(Arc::new(ctl_parse(&format!("forward . {} {{\n next NXDOMAIN\n}}\n", nx)).unwrap()));

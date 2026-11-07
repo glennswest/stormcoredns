@@ -98,3 +98,6 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 opt-level = 3
+
+[lints.rust]
+warnings = "deny"

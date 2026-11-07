@@ -182,7 +182,7 @@ CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first 
 - [x] unit test `server::tests::view_filters_see_collected_metadata` (real view expression + collector + `Server::lookup`; a live check needs a geoip DB, which dev lacks), docs, CHANGELOG — pushed through 8cc4fc8
 - [x] Verified 2026-11-07 (sc-build at 6d8ecd5, fresh build VM): the unit test passes, and live (`tmp/live12.sh`: hand-built MaxMind DB, 127.0.0.1/32 → country XX) a `view` on `metadata('geoip/country/code') == 'XX'` answers 127.0.0.1 and the plain block answers 127.0.0.2. The fix (7ce0943) is already in the staged `coredns` golden; #12 closed
 
-### In progress — #11 secondary timers (2026-10-07)
+### Done — #11 secondary timers (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.
 - [x] initial transfer retried with backoff 250ms→10s until it succeeds
 - [x] after a failed refresh check/transfer: retry every SOA `retry`; once `expire` has passed since the last good check the zone is expired → SERVFAIL (and no AXFR out) until a transfer succeeds
@@ -190,7 +190,7 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 - [x] refresh tasks stop on shutdown/reload (cancellation token); same for `loadbalance weighted`'s reload task
 - [x] NOTIFY only from a primary's IP (documented)
 - [x] tests (`serial_arithmetic`; `refresh_retry_expire` against a fake TCP primary: backoff, NOTIFY refresh, no downgrade, expiry → SERVFAIL/no AXFR out, recovery, shutdown), docs, CHANGELOG — pushed through 62509ef
-- [ ] **Blocked:** sc-build (combined `tmp/job15.sh`, also for #10/#12/#14/#15): dev.g8.lo unreachable (no route to host / refused, stormcentral#97). Then stage `coredns`, close #10, #11, #12, #14, #15
+- [x] Verified 2026-11-07 (sc-build at 122c728, fresh build VM): both unit tests pass; live (`tmp/live11.sh`, stormcoredns primary → secondary, SOA 2/1/6): backoff 250ms→2s with SERVFAIL before the first transfer, RFC 1982 wrap 4294967290→5 transferred on NOTIFY, older serial ignored, expiry 7s after the primary stopped (SERVFAIL, no AXFR out), recovery, SIGTERM exits at once. Code (3b87014, d4652fa) already in the staged `coredns` golden; #11 closed
 
 ### In progress — #8 `:port` IPv4-only after a reload (2026-10-07)
 - [x] `resolve_bind`: dual stack when IPv6 is usable (probe `[::]:0` once, cached), not by binding the real port (held by the old instance during a reload, or privileged)

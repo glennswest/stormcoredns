@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#11)
+- **test:** #11 verified on a fresh build VM: `serial_arithmetic` and `refresh_retry_expire` pass. Live check, a stormcoredns primary (`file` + `transfer`) feeding a stormcoredns `secondary` with SOA refresh 2 / retry 1 / expire 6: SERVFAIL and backoff 250 ms → 2 s before the first transfer; the serial wrap 4294967290 → 5 transferred on NOTIFY; an older serial (4294967000) left the zone alone; with the primary stopped, the zone expired at 7 s (SERVFAIL, no AXFR out) and recovered once the primary came back; SIGTERM exits at once.
+
 ### 2026-11-07 (#12)
 - **test:** #12 verified end to end on a fresh build VM: a hand-built MaxMind DB (127.0.0.1/32 → country `XX`), `metadata` + `geoip` + `view xx { expr metadata('geoip/country/code') == 'XX' }` in one block and a plain block on the same zone and port; a query from 127.0.0.1 got the view's answer, one from 127.0.0.2 the plain block's.
 

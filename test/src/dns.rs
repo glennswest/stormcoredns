@@ -182,22 +182,59 @@ pub fn show(m: &Message) -> String {
     format!("{:?}{} [{}]", rcode(m), if m.truncated() { " TC" } else { "" }, answers.join(", "))
 }
 
-/// Ask until `ok` holds or `within` passes. Returns the last reply and how
-/// long it took; a transport error counts as "not yet".
+/// The longest a cache may hold one reply: its smallest answer TTL, or for
+/// a negative reply the SOA's min(TTL, MINIMUM) (RFC 2308), as `cache`
+/// computes it. A reply with neither is not cacheable.
+pub fn cache_ttl(m: &Message) -> u32 {
+    if let Some(t) = m.answers().iter().map(|r| r.ttl()).min() {
+        return t;
+    }
+    m.name_servers()
+        .iter()
+        .find_map(|r| match r.data() {
+            Some(RData::SOA(soa)) => Some(r.ttl().min(soa.minimum())),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+/// Upper bound on the cache allowance, so a bogus TTL cannot stall a run.
+pub const MAX_CACHE_WAIT: Duration = Duration::from_secs(300);
+
+/// When `wait_for` gives up, given the replies so far: `within` after the
+/// start, or later if a reply seen by then may be cached until later. Only
+/// replies seen up to `within` count: the plugin must be right by then, and
+/// a cache in front of it (stormcos runs `cache 30`, as upstream CoreDNS
+/// would) gets to finish the TTL of whatever it held. A refill after that
+/// is the plugin itself still answering the old way, and does not extend it.
+fn extend_limit(limit: Duration, within: Duration, at: Duration, ttl: u32) -> Duration {
+    if at > within {
+        return limit;
+    }
+    let held = Duration::from_secs(u64::from(ttl)).min(MAX_CACHE_WAIT);
+    limit.max(at + held + Duration::from_secs(1))
+}
+
+/// Ask until `ok` holds or `within` passes, plus the rest of the TTL of a
+/// reply a cache may still be holding at `within` (see `extend_limit`).
+/// Returns the last reply and how long it took; a transport error counts as
+/// "not yet".
 pub async fn wait_for<F>(server: SocketAddr, name: &str, qtype: RecordType, proto: Proto, within: Duration, ok: F) -> (Option<Message>, Duration, bool)
 where
     F: Fn(&Message) -> bool,
 {
     let start = Instant::now();
     let mut last = None;
+    let mut limit = within;
     loop {
         if let Ok(m) = query(server, name, qtype, proto, None, Duration::from_secs(2)).await {
             if ok(&m) {
                 return (Some(m), start.elapsed(), true);
             }
+            limit = extend_limit(limit, within, start.elapsed(), cache_ttl(&m));
             last = Some(m);
         }
-        if start.elapsed() >= within {
+        if start.elapsed() >= limit {
             return (last, start.elapsed(), false);
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -224,5 +261,33 @@ mod tests {
         assert_eq!(reverse("10.96.0.10".parse().unwrap()), "10.0.96.10.in-addr.arpa.");
         assert!(reverse("::1".parse().unwrap()).starts_with("1.0.0.0."));
         assert!(reverse("::1".parse().unwrap()).ends_with(".ip6.arpa."));
+    }
+
+    #[test]
+    fn cache_allowance() {
+        let s = Duration::from_secs;
+        // A negative answer cached at 1 s with TTL 30 is held until 31 s.
+        assert_eq!(extend_limit(s(30), s(30), s(1), 30), s(32));
+        // Seen after `within`: a refill from the plugin, no extension.
+        assert_eq!(extend_limit(s(30), s(30), s(31), 30), s(30));
+        // Never shorter than `within`, and capped.
+        assert_eq!(extend_limit(s(30), s(30), s(2), 5), s(30));
+        assert_eq!(extend_limit(s(30), s(30), s(0), 86400), MAX_CACHE_WAIT + s(1));
+    }
+
+    #[test]
+    fn cache_ttl_of_replies() {
+        use hickory_proto::rr::rdata::{A, SOA};
+        use hickory_proto::rr::Record;
+        let n = Name::from_ascii("x.cluster.local.").unwrap();
+        let mut pos = Message::new();
+        pos.add_answer(Record::from_rdata(n.clone(), 30, RData::A(A::new(10, 0, 0, 1))));
+        pos.add_answer(Record::from_rdata(n.clone(), 12, RData::A(A::new(10, 0, 0, 2))));
+        assert_eq!(cache_ttl(&pos), 12);
+        let mut neg = Message::new();
+        let soa = SOA::new(Name::from_ascii("ns.dns.cluster.local.").unwrap(), Name::from_ascii("hostmaster.cluster.local.").unwrap(), 1, 7200, 1800, 86400, 5);
+        neg.add_name_server(Record::from_rdata(Name::from_ascii("cluster.local.").unwrap(), 30, RData::SOA(soa)));
+        assert_eq!(cache_ttl(&neg), 5);
+        assert_eq!(cache_ttl(&Message::new()), 0);
     }
 }

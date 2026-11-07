@@ -191,7 +191,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
 
     rep.check("udp-truncates", async {
         if !programmed {
-            return fail(format!("{big} never showed its 100 endpoints over TCP"));
+            return fail(format!("{big} never showed its 100 endpoints over TCP within {PROGRAM:?} plus the cached answer's TTL"));
         }
         match dns::query(server, &big, RecordType::A, Proto::Udp, None, T).await {
             Ok(m) if m.truncated() => pass(format!("{big} over UDP without EDNS: TC with {} of 100 answers", m.answers().len())),
@@ -262,7 +262,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
                 left.push(q);
             }
         }
-        if left.is_empty() { pass(format!("all four NXDOMAIN within {} ms", start.elapsed().as_millis())) } else { fail(format!("still resolving {PROGRAM:?} after delete: {left:?}")) }
+        if left.is_empty() { pass(format!("all four NXDOMAIN within {} ms", start.elapsed().as_millis())) } else { fail(format!("still resolving {PROGRAM:?} (plus the cached answer's TTL) after delete: {left:?}")) }
     })
     .await?;
     Ok(())

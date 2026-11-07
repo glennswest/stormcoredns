@@ -41,6 +41,16 @@ first creates through the API in its own namespace, labelled
 `storm.io/test-run=<run id>`. Each suite deletes what it made, and the runner
 deletes the namespace whatever happens.
 
+**Timing and the cache.** "Within 30 s" (PROGRAM) means the plugin must be
+right by then. A `cache` in front of it (stormcos runs `cache 30` with
+`ttl 30`, and upstream CoreDNS behaves the same) may keep serving a reply it
+fetched earlier: a negative one from before the backends were in, or the old
+answer after a delete. So every wait also allows the rest of the TTL of a
+reply seen by the 30 s mark (the smallest answer TTL, or the SOA's
+min(TTL, MINIMUM) for a negative one; at most 300 s). A reply fetched after
+the 30 s mark is the plugin itself still answering the old way, and does not
+extend the wait.
+
 Endpoint addresses come from the benchmarking range `198.18.0.0/15`, spread by
 the run id. They are only data in Endpoints and EndpointSlices; nothing
 connects to them. Backends are written as both core Endpoints and an

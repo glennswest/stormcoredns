@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#5)
+- **test:** First medium run (63cfb89f55, C2NR0Q2): 19 of 22 passed. The 3 failures were all the stormcos `cache 30`, not the server. One was a negative answer cached before the 100-endpoint Service's backends were in: over TCP it was still held at 30 s, and 26 ms later EDNS got all 100. The other was the old answers still cached after the deletes. Every wait (`dns::wait_for`) now also allows the rest of the TTL of a reply seen by the 30 s mark (capped at 300 s). A refill after the mark does not extend the wait. Documented in test/README.md.
+
 ### 2026-11-07 (#15, #6, #7, #8, #10, #11, #12, #14)
 - **test:** Verified on a fresh build VM at a40e9b2 (`sc-build` of the combined job): the workspace builds with no warnings and 88 + 6 tests pass. Live checks all as intended: whoami SRV; `local`; hosts SERVFAIL/NODATA; acl EDE 15/17; template SERVFAIL on a regex miss; erratic SERVFAIL and AXFR; `process_*` metrics; `reload_version_info{hash="sha512"}`; reload on an edit; IPv4 + IPv6 after SIGHUP and after an edit reload (#8); `/health` 200 and `/ready` 503 only during the exit lameduck (#6); a bad edit keeps the old config serving and a later good edit reloads (#7).
 

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#10)
+- **test:** `dnssec`: `every_signature_validates` checks each RRSIG with hickory's validator against the zone's DNSKEY. It covers a positive answer, an NXDOMAIN and a NODATA black lie, a qtype NSEC query, a delegation NSEC and a DS referral, and also the same black lie served from the signature cache. The existing tests checked the records' shape only.
+
 ### 2026-11-07 (#14)
 - **fix:** `kubernetes` `tls CERT KEY CACERT`: the CA file is read as PEM (one or more certificates; a file with no PEM block is taken as DER) and handed to the client as DER. Before, the PEM bytes went in as-is, startup failed with `failed to add a root certificate: … BadEncoding`, and the server exited, so `endpoint https://…` with `tls` never worked. Found by a live check against a fake API server with a private CA.
 - **docs:** plugins.md: `tls` takes PEM files and is used only with `endpoint`.

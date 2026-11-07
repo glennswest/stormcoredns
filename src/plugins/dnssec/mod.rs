@@ -461,6 +461,46 @@ mod tests {
         assert!(!m.name_servers().iter().any(|r| r.record_type() == RecordType::NSEC));
     }
 
+    /// Every RRSIG in the reply validates with the zone's DNSKEY over the
+    /// RRset it covers (same section, owner and type), as a validator checks.
+    /// Returns how many were checked.
+    fn verify_all(d: &Dnssec, m: &Message) -> usize {
+        use hickory_proto::rr::dnssec::Verifier;
+        let key = &d.keys[0].dnskey;
+        let mut n = 0;
+        for sec in [m.answers(), m.name_servers(), m.additionals()] {
+            for r in sec {
+                let Some(RData::DNSSEC(DNSSECRData::RRSIG(sig))) = r.data() else { continue };
+                let set: Vec<Record> = sec.iter().filter(|x| x.name() == r.name() && x.record_type() == sig.type_covered()).cloned().collect();
+                assert!(!set.is_empty(), "RRSIG {} {:?} covers nothing", r.name(), sig.type_covered());
+                key.verify_rrsig(r.name(), hickory_proto::rr::DNSClass::IN, sig, &set)
+                    .unwrap_or_else(|e| panic!("RRSIG {} {:?} does not validate: {}", r.name(), sig.type_covered(), e));
+                n += 1;
+            }
+        }
+        n
+    }
+
+    #[tokio::test]
+    async fn every_signature_validates() {
+        let d = dnssec();
+        let cases: [(&str, RecordType, usize); 6] = [
+            ("www.example.org.", RecordType::A, 1),     // A
+            ("nx.example.org.", RecordType::A, 2),      // black lie: SOA + NSEC
+            ("nodata.example.org.", RecordType::A, 2),  // NODATA: SOA + NSEC
+            ("nx.example.org.", RecordType::NSEC, 1),   // the NSEC as the answer
+            ("sub.example.org.", RecordType::A, 1),     // referral: delegation NSEC
+            ("ds.example.org.", RecordType::A, 1),      // referral: DS
+        ];
+        for (name, t, want) in cases {
+            let m = q(&d, name, t).await;
+            assert_eq!(verify_all(&d, &m), want, "{} {:?}: signatures checked", name, t);
+        }
+        // the same RRsets from the signature cache validate too
+        let m = q(&d, "nx.example.org.", RecordType::A).await;
+        assert_eq!(verify_all(&d, &m), 2);
+    }
+
     #[test]
     fn cached_signatures_are_remade_before_expiry() {
         let d = dnssec();

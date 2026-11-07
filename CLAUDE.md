@@ -151,7 +151,7 @@ Fix here, item by item (commit each group):
 Split into their own issues if large: Go template functions, dnstap FORWARDER_*, route53 IMDS/IRSA/profile, process_* metrics, rustls client_auth, AXFR over DoH/DoQ/gRPC
 - [x] All fixes pushed (through aa3c367); split out #21 template, #22 dnstap FORWARDER, #23 route53 IRSA/IMDS, #24 tsig MD5/SHA1/AXFR
 - [x] docs (plugins.md, README, integration.md, presentation), CHANGELOG
-- [ ] **Blocked:** sc-build verification. b51de9e (through erratic) was green (73+6 tests, no warnings); the full job at aa3c367 got no build slot four times in a row (exit 75, P3 starved, stormcentral#505); item proposed after it. Next: run `tmp/job15.sh`'s steps (full build + test + live check of whoami/local/hosts/acl EDE/template/erratic AXFR/process metrics/reload), fix what fails, stage `coredns`, close #15
+- [ ] **Verifying (2026-11-07):** sc-build of `tmp/job_all.sh` at a40e9b2 (build VM, full workspace build + tests + every live check for #6/#7/#8/#15). Then stage `coredns`, close #15 (and #6, #7, #8, #10–#12, #14 if their checks pass)
 
 ### In progress — #14 kubernetes/cloud readiness and discovery (2026-10-07)
 Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup hook waits for the API to sync, up to `startup_timeout` (default 5s), then serves what it has.

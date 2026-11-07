@@ -163,7 +163,7 @@ Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup h
 - [x] kubernetes: `endpoint https://` without `tls` verifies against the system roots (as CoreDNS) instead of skipping verification; `tls` without `endpoint` warns
 - [x] route53/azure/clouddns: ready only once every zone has been fetched successfully
 - [x] tests (slice index, discovery against a fake API server, cloud readiness), docs, CHANGELOG — pushed through 01000ea
-- [ ] **Blocked:** sc-build. The combined #15+#14 job (`tmp/job15.sh`: full build, tests, #15 live check) at 01000ea got no slot (exit 75, stormcentral#505). Then: fix what fails, stage `coredns`, close #14 and #15
+- [ ] Verifying (2026-11-07): its unit tests (cloud readiness, slice IP index, discovery vs a fake API) pass at cbfb301. The startup sync wait and endpoint TLS have no unit test, so `tmp/live14.sh` runs the binary against a fake API (python): lists after 2s (waits, first answer is the Service), never answers (warns unsynced at startup_timeout, serves), https with a private CA without `tls` (refused) and with `tls` (synced). Then close #14
 
 ### In progress — #10 dnssec black lies and signature cache (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache.go`).

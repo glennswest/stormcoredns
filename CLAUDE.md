@@ -155,7 +155,7 @@ Split into their own issues if large: Go template functions, dnstap FORWARDER_*,
 - [x] docs (plugins.md, README, integration.md, presentation), CHANGELOG
 - [x] Verified 2026-11-07: sc-build of `tmp/job_all.sh` at a40e9b2 on a fresh build VM — no warnings, 88+6 tests, every live check as intended (also covers #6/#7/#8). `coredns` staged (stage build 74b6064c0b61); #15 closed
 
-### In progress — #14 kubernetes/cloud readiness and discovery (2026-10-07)
+### Done — #14 kubernetes/cloud readiness and discovery (2026-10-07)
 Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup hook waits for the API to sync, up to `startup_timeout` (default 5s), then serves what it has.
 - [x] kubernetes: wait for sync in the startup hook, `startup_timeout DURATION` (default 5s), as CoreDNS
 - [x] kubernetes: EndpointSlice discovery with a timeout; transient errors retry in the background instead of locking in core Endpoints (CoreDNS 1.12 is slices-only; our Endpoints fallback stays as an extension for rustkube)
@@ -163,7 +163,7 @@ Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup h
 - [x] kubernetes: `endpoint https://` without `tls` verifies against the system roots (as CoreDNS) instead of skipping verification; `tls` without `endpoint` warns
 - [x] route53/azure/clouddns: ready only once every zone has been fetched successfully
 - [x] tests (slice index, discovery against a fake API server, cloud readiness), docs, CHANGELOG — pushed through 01000ea
-- [ ] Verifying (2026-11-07): its unit tests (cloud readiness, slice IP index, discovery vs a fake API) pass at cbfb301. The startup sync wait and endpoint TLS have no unit test, so `tmp/live14.sh` runs the binary against a fake API (python): lists after 2s (waits, first answer is the Service), never answers (warns unsynced at startup_timeout, serves), https with a private CA without `tls` (refused) and with `tls` (synced). Then close #14
+- [x] Verified 2026-11-07 at 20e3193 (sc-build: 89+8 tests, no warnings; `tmp/live14.sh` vs a fake API): startup waits for a slow API and answers the Service first; an API that never answers → "unsynced" warning at startup_timeout, then serves; https + private CA without `tls` → handshake refused (unknown ca); with `tls` → synced. The live check found `tls` broken (PEM CA passed as DER → BadEncoding, server exited): fixed in 20e3193. `coredns` staged; #14 closed
 
 ### In progress — #10 dnssec black lies and signature cache (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache.go`).

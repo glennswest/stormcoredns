@@ -142,7 +142,7 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] sc-build green at c35d48d (68+6 tests, no warnings) + live check on dev (closest-encloser NXDOMAIN, DNAME chain, YXDOMAIN, per-stanza reload); golden `golden-coredns-f17e28c24280` (stormcos#348)
 - [x] Found: hickory 0.24's zone parser refuses RRSIG/NSEC/NSEC3/DNSKEY, so signed zone files (and `sign`'s output) don't load in `file` — filed #20
 
-### In progress — #15 CoreDNS 1.12 divergences (2026-10-06)
+### Done — #15 CoreDNS 1.12 divergences (2026-10-06)
 Checked against CoreDNS v1.12.4 source (cloned into `tmp/coredns-1.12`, not committed).
 Fix here, item by item (commit each group):
 - [ ] defaults: `bufsize` 1232; `cache` SERVFAIL 5 s; `etcd` TTL 300 / priority 10
@@ -151,7 +151,7 @@ Fix here, item by item (commit each group):
 Split into their own issues if large: Go template functions, dnstap FORWARDER_*, route53 IMDS/IRSA/profile, process_* metrics, rustls client_auth, AXFR over DoH/DoQ/gRPC
 - [x] All fixes pushed (through aa3c367); split out #21 template, #22 dnstap FORWARDER, #23 route53 IRSA/IMDS, #24 tsig MD5/SHA1/AXFR
 - [x] docs (plugins.md, README, integration.md, presentation), CHANGELOG
-- [ ] **Verifying (2026-11-07):** sc-build of `tmp/job_all.sh` at a40e9b2 (build VM, full workspace build + tests + every live check for #6/#7/#8/#15). Then stage `coredns`, close #15 (and #6, #7, #8, #10–#12, #14 if their checks pass)
+- [x] Verified 2026-11-07: sc-build of `tmp/job_all.sh` at a40e9b2 on a fresh build VM — no warnings, 88+6 tests, every live check as intended (also covers #6/#7/#8). `coredns` staged (stage build 74b6064c0b61); #15 closed
 
 ### In progress — #14 kubernetes/cloud readiness and discovery (2026-10-07)
 Checked against CoreDNS v1.12.4: it does not SERVFAIL before sync; its startup hook waits for the API to sync, up to `startup_timeout` (default 5s), then serves what it has.

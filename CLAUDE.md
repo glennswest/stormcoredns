@@ -93,7 +93,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] ~~Pushed to the mkube registry~~ — superseded: mkube retired 2026-08-27; delivery is the `coredns` golden (#2)
 - [x] `deploy/kubernetes/coredns.yaml` + `docs/integration.md` for the stormcos integration (asked for by the owner 2026-08-30)
 - [x] Runs against rustkube as the cluster DNS (stormcos 11.03, 2026-09-21: `kubernetes.default.svc.cluster.local` → 10.96.0.1)
-- [ ] Test containers per the stormcos test standard (#5) — built; first in-cluster run pending (see below)
+- [x] Test containers per the stormcos test standard (#5) — short and medium pass in-cluster on pvetest2, server8 and C2NR0Q2 (2026-11-07)
 - [ ] trace exporter (OTLP/Zipkin), NSEC3 in `file`/`sign`, CDS/CDNSKEY in `sign`, `kubernetes multicluster`
 
 ### Done — #3 docs from the code (2026-09-26)
@@ -105,7 +105,7 @@ MicroDNS consolidation path: `view`, `transfer`, `secondary`).
 - [x] `docs/presentation.md`: Marp deck (14 slides) drawn from the #3 docs, every claim checkable against the code; renders with `npx @marp-team/marp-cli@4`
 - [x] stormcentral's graph has `stormcoredns depends_on stormd`, but the `coredns` golden is a bare binary (no stormd) — filed stormcentral#35; the slide shows the real runtime dependencies
 
-### In progress — #5 test containers (2026-09-27)
+### Done — #5 test containers (2026-09-27)
 Design (stormcentral `docs/test-standard.md`, runner `src/testruns.rs`):
 the runner applies its own Job (`/test <suite>`, plain pod, SA `storm-test`
 with `*` in the run's namespace only, no cluster read). So the test finds the
@@ -118,9 +118,9 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] long: waves of Services ramped until the cluster pushes back; programming latency, query p50/p99, drain residue, probe slowdown vs wave 1
 - [x] sc-build `cargo build --locked --workspace && cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh` green (491a7af; 3.4 MB static binary)
 - [x] ~~Blocked on the runner/registry~~ (stormcentral#56/#71, stormblock-registry#56): cleared by 2026-10-10
-- [ ] First real runs on C2NR0Q2 (release 12.14, golden coredns f17e28c24280), 2026-10-10: short b750e41142 at 7ae4f72 passed 5/6; `service-deleted` still answered 30 s after the delete. stormcos's Corefile has `ttl 30` + `cache 30`, so the check now allows PROGRAM + the answer's TTL and reports whether the plugin refilled the answer (plugin still has the Service) or only the cache held it. Medium run 63cfb89f55 queued. Next: rerun short, read medium, fix what they find, close #5
+- [x] First real runs on C2NR0Q2 (release 12.14, golden coredns f17e28c24280), 2026-10-10: short b750e41142 at 7ae4f72 passed 5/6; `service-deleted` still answered 30 s after the delete. stormcos's Corefile has `ttl 30` + `cache 30`, so the check now allows PROGRAM + the answer's TTL and reports whether the plugin refilled the answer (plugin still has the Service) or only the cache held it. Medium run 63cfb89f55 queued. Next: rerun short, read medium, fix what they find, close #5
 - [x] Medium 63cfb89f55 (7ae4f72): 19/22. `udp-truncates`/`tcp-whole` (TCP 0 answers at 30.0 s, EDNS 26 ms later had all 100) and `deleted-services-vanish` are the `cache 30` holding a negative/old answer, as upstream would. Fix: `dns::wait_for` gives a cache the rest of the TTL of the answer it held at PROGRAM (cap 300 s); a refill after PROGRAM does not extend it. Then rerun short + medium on a test machine (a40e9b2 medium runs errored on the platform: pvetest1 no VM, pvetest2 image not sealed)
-- [ ] Fix pushed (6229c82, wait_for cache allowance; cbfb301 denies warnings), sc-build green (88+8 tests, no warnings). Runs at cbfb301 (2026-11-07): short 7e5afebcf8 (C2NR0Q2) f9fb4f13d6 (pvetest2) 91dc623a95 (server8); medium b23f0bbbe5 / 6c0e547084 / 1f739eb733. Next: read them (`stormcentral test show <id>`), fix, close #5
+- [x] Fix pushed (6229c82 wait_for cache allowance; cbfb301 denies warnings), sc-build green (88+8 tests, no warnings). Runs at cbfb301 (2026-11-07), all passed: short f9fb4f13d6 (pvetest2) 7a94825246 (C2NR0Q2) 6/6; medium 6c0e547084 (pvetest2) 1f739eb733 (server8) 6e6dd6aacc (C2NR0Q2) 22/22. Platform errors (not ours): 91dc623a95 server8 seal wait → filed stormcentral#1304; ea7c5496bb stormcentral restart. #5 closed; `long` runs in the nightly window
 
 ### Done — docs refresh, third pass (2026-09-27)
 - [x] No code changes since 06ff80c; integration.md now notes the ironprom scrape of `10.96.0.10:9153` and the missing Service port (filed stormcos#152)

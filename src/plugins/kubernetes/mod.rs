@@ -729,6 +729,24 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The CA file of `tls CERT KEY CACERT` as kube-rs wants it: DER
+/// certificates. The file is PEM, as in CoreDNS (one or more certificates);
+/// a file with no PEM block is taken as a single DER certificate.
+fn read_ca_certs(path: &std::path::Path) -> Result<Vec<Vec<u8>>> {
+    let raw = std::fs::read(path).map_err(|e| anyhow!("reading {}: {}", path.display(), e))?;
+    let certs = rustls_pemfile::certs(&mut raw.as_slice())
+        .map(|c| c.map(|c| c.as_ref().to_vec()))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+    if !certs.is_empty() {
+        return Ok(certs);
+    }
+    if raw.starts_with(b"-----BEGIN") {
+        return Err(anyhow!("{}: no CERTIFICATE block", path.display()));
+    }
+    Ok(vec![raw])
+}
+
 async fn make_client(endpoint: Option<String>, tls: Option<(String, String, String)>, kubeconfig: Option<(String, Option<String>)>, root: &std::path::Path) -> Result<kube::Client> {
     let resolve = |p: &str| if std::path::Path::new(p).is_absolute() { std::path::PathBuf::from(p) } else { root.join(p) };
     let config = if let Some((file, ctx)) = kubeconfig {
@@ -739,7 +757,7 @@ async fn make_client(endpoint: Option<String>, tls: Option<(String, String, Stri
         let uri: http::Uri = url.parse().map_err(|e| anyhow!("endpoint {}: {}", url, e))?;
         let mut cfg = kube::Config::new(uri);
         if let Some((cert, key, ca)) = tls {
-            cfg.root_cert = Some(vec![std::fs::read(resolve(&ca)).map_err(|e| anyhow!("reading {}: {}", ca, e))?]);
+            cfg.root_cert = Some(read_ca_certs(&resolve(&ca))?);
             cfg.auth_info.client_certificate = Some(resolve(&cert).display().to_string());
             cfg.auth_info.client_key = Some(resolve(&key).display().to_string());
         }
@@ -756,6 +774,25 @@ async fn make_client(endpoint: Option<String>, tls: Option<(String, String, Stri
 mod tests {
     use super::*;
     use store::testing;
+
+    #[test]
+    fn tls_ca_file_is_pem_turned_into_der() {
+        // A PEM file with two certificates (the bodies are opaque base64 here:
+        // only the PEM framing matters to read_ca_certs).
+        let dir = std::env::temp_dir().join(format!("sc-ca-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pem = dir.join("ca.crt");
+        std::fs::write(&pem, "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\nnoise\n-----BEGIN CERTIFICATE-----\nBAUG\n-----END CERTIFICATE-----\n").unwrap();
+        assert_eq!(read_ca_certs(&pem).unwrap(), vec![vec![1, 2, 3], vec![4, 5, 6]]);
+        let der = dir.join("ca.der");
+        std::fs::write(&der, [0x30, 0x82, 0x01]).unwrap();
+        assert_eq!(read_ca_certs(&der).unwrap(), vec![vec![0x30, 0x82, 0x01]]);
+        let key = dir.join("key.pem");
+        std::fs::write(&key, "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n").unwrap();
+        assert!(read_ca_certs(&key).is_err(), "a PEM file without a certificate is refused");
+        assert!(read_ca_certs(&dir.join("missing")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn k8s() -> Arc<Kubernetes> {
         let store = Store::new();

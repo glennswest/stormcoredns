@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#12)
+- **test:** #12 verified end to end on a fresh build VM: a hand-built MaxMind DB (127.0.0.1/32 → country `XX`), `metadata` + `geoip` + `view xx { expr metadata('geoip/country/code') == 'XX' }` in one block and a plain block on the same zone and port; a query from 127.0.0.1 got the view's answer, one from 127.0.0.2 the plain block's.
+
 ### 2026-11-07 (#10)
 - **test:** `dnssec`: `every_signature_validates` checks each RRSIG with hickory's validator against the zone's DNSKEY. It covers a positive answer, an NXDOMAIN and a NODATA black lie, a qtype NSEC query, a delegation NSEC and a DS referral, and also the same black lie served from the signature cache. The existing tests checked the records' shape only.
 

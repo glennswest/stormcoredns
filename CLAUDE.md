@@ -176,11 +176,11 @@ Checked against CoreDNS v1.12.4 `plugin/dnssec` (`Sign`, `black_lies.go`, `cache
 - [x] **Verification (also for #14 and #15):** the combined job (`tmp/job15.sh`) at 28a1490 (#25 closed) ran: workspace builds with no warnings, 81/82 tests pass, every #15 live check as intended (whoami SRV, local, hosts SERVFAIL/NODATA, acl EDE 15/17, template SERVFAIL, erratic SERVFAIL + 6-record AXFR, process_* + reload sha512, reload on edit). The one failure (black-lie NSEC next name lost `\000`, also before #10) is fixed in 811f088; the rerun got no slot twice (exit 75, stormcentral#505). Next: rerun, then stage `coredns`, close #10, #14, #15
 - [x] 2026-11-07: `every_signature_validates` added (04ca9c5); sc-build green at 04ca9c5 (90+8 tests, no warnings): every RRSIG of positive, NXDOMAIN/NODATA black lies, NSEC query, delegation NSEC and DS referral validates with the DNSKEY. Code already in the `coredns` golden staged 75f4f9d20ed7; #10 closed
 
-### In progress — #12 view metadata() (2026-10-07)
+### Done — #12 view metadata() (2026-10-07)
 CoreDNS 1.12 (`core/dnsserver/server.go`): for each candidate config, the first metadata plugin's `Collect` runs before that config's view filters, so `metadata()` sees the providers' labels.
 - [x] `metadata` keeps a collector on its `ServerConfig`; `Server::lookup` collects before each filter; the plugin's own `serve_dns` only passes on
 - [x] unit test `server::tests::view_filters_see_collected_metadata` (real view expression + collector + `Server::lookup`; a live check needs a geoip DB, which dev lacks), docs, CHANGELOG — pushed through 8cc4fc8
-- [ ] **Blocked:** sc-build at 8cc4fc8 (the combined `tmp/job15.sh`, which also verifies #10, #14, #15): dev.g8.lo refused ssh on :22 twice (exit 255, stormcentral#97). Then stage `coredns`, close #10, #12, #14, #15
+- [x] Verified 2026-11-07 (sc-build at 6d8ecd5, fresh build VM): the unit test passes, and live (`tmp/live12.sh`: hand-built MaxMind DB, 127.0.0.1/32 → country XX) a `view` on `metadata('geoip/country/code') == 'XX'` answers 127.0.0.1 and the plain block answers 127.0.0.2. The fix (7ce0943) is already in the staged `coredns` golden; #12 closed
 
 ### In progress — #11 secondary timers (2026-10-07)
 Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary/setup.go`.

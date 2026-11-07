@@ -119,6 +119,7 @@ Endpoints and EndpointSlices it creates in its own namespace.
 - [x] sc-build `cargo build --locked --workspace && cargo test --locked --workspace && STAGE_ONLY=1 test/build.sh` green (491a7af; 3.4 MB static binary)
 - [x] ~~Blocked on the runner/registry~~ (stormcentral#56/#71, stormblock-registry#56): cleared by 2026-10-10
 - [ ] First real runs on C2NR0Q2 (release 12.14, golden coredns f17e28c24280), 2026-10-10: short b750e41142 at 7ae4f72 passed 5/6; `service-deleted` still answered 30 s after the delete. stormcos's Corefile has `ttl 30` + `cache 30`, so the check now allows PROGRAM + the answer's TTL and reports whether the plugin refilled the answer (plugin still has the Service) or only the cache held it. Medium run 63cfb89f55 queued. Next: rerun short, read medium, fix what they find, close #5
+- [ ] Medium 63cfb89f55 (7ae4f72): 19/22. `udp-truncates`/`tcp-whole` (TCP 0 answers at 30.0 s, EDNS 26 ms later had all 100) and `deleted-services-vanish` are the `cache 30` holding a negative/old answer, as upstream would. Fix: `dns::wait_for` gives a cache the rest of the TTL of the answer it held at PROGRAM (cap 300 s); a refill after PROGRAM does not extend it. Then rerun short + medium on a test machine (a40e9b2 medium runs errored on the platform: pvetest1 no VM, pvetest2 image not sealed)
 
 ### Done — docs refresh, third pass (2026-09-27)
 - [x] No code changes since 06ff80c; integration.md now notes the ironprom scrape of `10.96.0.10:9153` and the missing Service port (filed stormcos#152)

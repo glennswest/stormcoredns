@@ -192,10 +192,10 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 - [x] tests (`serial_arithmetic`; `refresh_retry_expire` against a fake TCP primary: backoff, NOTIFY refresh, no downgrade, expiry → SERVFAIL/no AXFR out, recovery, shutdown), docs, CHANGELOG — pushed through 62509ef
 - [x] Verified 2026-11-07 (sc-build at 122c728, fresh build VM): both unit tests pass; live (`tmp/live11.sh`, stormcoredns primary → secondary, SOA 2/1/6): backoff 250ms→2s with SERVFAIL before the first transfer, RFC 1982 wrap 4294967290→5 transferred on NOTIFY, older serial ignored, expiry 7s after the primary stopped (SERVFAIL, no AXFR out), recovery, SIGTERM exits at once. Code (3b87014, d4652fa) already in the staged `coredns` golden; #11 closed
 
-### In progress — #8 `:port` IPv4-only after a reload (2026-10-07)
+### Done — #8 `:port` IPv4-only after a reload (2026-10-07)
 - [x] `resolve_bind`: dual stack when IPv6 is usable (probe `[::]:0` once, cached), not by binding the real port (held by the old instance during a reload, or privileged)
 - [x] test `port_held_by_another_listener_stays_dual_stack`, docs, CHANGELOG — pushed through 72c1180
-- [ ] **Blocked:** sc-build of `tmp/job_all.sh` (= `job15.sh` + `live8.sh`: v4/v6 queries before and after SIGHUP and a Corefile-edit reload) — dev.g8.lo: no route to host (stormcentral#97). One passing run verifies #8, #10, #11, #12, #14, #15; then stage `coredns` and close them
+- [x] Verified 2026-11-07: `tmp/live8c.sh` at aa24c05: v4+v6 answer and the listener is `*:1054` before a reload, after SIGHUP and after a Corefile edit; a negative control at f195c04^ (`SC_BUILD_EXPECT_FAIL=1`, branch wip/8-control, deleted) has v6 timing out and `0.0.0.0:1054` after either reload. Fix (f195c04) already in the staged `coredns` golden (stage at a40e9b2); #8 closed
 
 ### Done — #17 presentation: stormcos#79 done (2026-10-07)
 - [x] Checked in stormcos (build-goldens.sh, 80-coredns.yaml, #79 closed 2026-09-30); slide updated in c1b91b4; docs-only, closed

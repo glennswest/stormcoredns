@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#8)
+- **test:** #8 verified on fresh build VMs: `.:1054` with `reload` answered over IPv4 and IPv6 and listened on `*:1054` before a reload, after SIGHUP and after a Corefile edit. The same check on the commit before the fix (f195c04^) reproduced the bug: after either reload IPv6 timed out and the listener was `0.0.0.0:1054`.
+
 ### 2026-11-07 (#11)
 - **test:** #11 verified on a fresh build VM: `serial_arithmetic` and `refresh_retry_expire` pass. Live check, a stormcoredns primary (`file` + `transfer`) feeding a stormcoredns `secondary` with SOA refresh 2 / retry 1 / expire 6: SERVFAIL and backoff 250 ms → 2 s before the first transfer; the serial wrap 4294967290 → 5 transferred on NOTIFY; an older serial (4294967000) left the zone alone; with the primary stopped, the zone expired at 7 s (SERVFAIL, no AXFR out) and recovered once the primary came back; SIGTERM exits at once.
 

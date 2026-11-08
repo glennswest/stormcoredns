@@ -212,7 +212,7 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] `Instance::start`: a failing startup hook runs the half-started instance's shutdown hooks
 - [x] process-wide state (`/ready` list, `plugin_enabled`) published only after a successful start; leftovers of a failed build (pending wiring, ready blocks) cleared at the next build
 - [x] test `reload_watcher_keeps_watching_and_a_failed_start_cleans_up`, docs, CHANGELOG — pushed
-- [ ] sc-build of `tmp/job_all.sh` (job15 + live8 + live6 + live7: bad edit → old serves → good edit reloads)
+- [ ] live check `tmp/live7c.sh` on a build VM (bad edit → old serves, not retried → good edit reloads; twice), plus a negative control at f52bef3^ (`SC_BUILD_EXPECT_FAIL=1`, branch wip/7-control)
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

@@ -27,6 +27,7 @@
 
 ### 2026-11-07 (#15, #6, #7, #8, #10, #11, #12, #14)
 - **test:** Verified on a fresh build VM at a40e9b2 (`sc-build` of the combined job): the workspace builds with no warnings and 88 + 6 tests pass. Live checks all as intended: whoami SRV; `local`; hosts SERVFAIL/NODATA; acl EDE 15/17; template SERVFAIL on a regex miss; erratic SERVFAIL and AXFR; `process_*` metrics; `reload_version_info{hash="sha512"}`; reload on an edit; IPv4 + IPv6 after SIGHUP and after an edit reload (#8); `/health` 200 and `/ready` 503 only during the exit lameduck (#6); a bad edit keeps the old config serving and a later good edit reloads (#7).
+- **test:** #7 live check (`tmp/live7c.sh`) at 6b064bd: two rounds of bad edit then good edit; each bad edit is tried once and the old config keeps serving, and each good edit reloads. A negative control at f52bef3^ stops reloading after the first bad edit.
 
 ### 2026-10-10 (#5)
 - **test:** First in-cluster runs on C2NR0Q2. `short`'s `service-deleted` now waits 30 s plus the TTL of the last answer, since a `cache` in front of the plugin may keep the answer that long, as upstream does. A failure says whether the plugin refilled the answer after the delete. Answers in test output show their TTL.

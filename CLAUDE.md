@@ -206,13 +206,13 @@ Checked against CoreDNS v1.12.4: health's lameduck is `OnFinalShutdown` only; `/
 - [x] unit test `lameduck_only_at_process_exit`; docs, CHANGELOG
 - [x] Verified 2026-11-07: `tmp/live6c.sh` at b7caeaa: reload 0.0 s, `/health`+`/ready` 200 after SIGHUP, past the lameduck and after a Corefile edit; at SIGTERM health 200 / ready 503 / DNS answers, exit after the lameduck. Negative control at 395e2a4^ (`SC_BUILD_EXPECT_FAIL=1`): reload 3.1 s, `/health` 503 for good. Fix in the staged `coredns` golden (a40e9b2); stormcos#897 filed for the liveness probe; #6 closed
 
-### In progress — #7 a failed reload stops automatic reloads (2026-10-07)
+### Done — #7 a failed reload stops automatic reloads (2026-10-07)
 CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the same broken file) and keeps watching when the restart fails.
 - [x] watcher keeps running after a request, with the new hash; stopped by its own instance's shutdown (no global replace)
 - [x] `Instance::start`: a failing startup hook runs the half-started instance's shutdown hooks
 - [x] process-wide state (`/ready` list, `plugin_enabled`) published only after a successful start; leftovers of a failed build (pending wiring, ready blocks) cleared at the next build
 - [x] test `reload_watcher_keeps_watching_and_a_failed_start_cleans_up`, docs, CHANGELOG — pushed
-- [ ] live check `tmp/live7c.sh` on a build VM (bad edit → old serves, not retried → good edit reloads; twice), plus a negative control at f52bef3^ (`SC_BUILD_EXPECT_FAIL=1`, branch wip/7-control)
+- [x] Verified 2026-11-07: `tmp/live7c.sh` at 6b064bd: bad edit → old instance serves, same file not retried; good edit reloads; again a second time (2 failures, 2 reloads). Negative control at f52bef3^ (`SC_BUILD_EXPECT_FAIL=1`, branch wip/7-control, deleted): after the first bad edit nothing reloads again. Fix in the staged `coredns` golden (a40e9b2); #7 closed
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

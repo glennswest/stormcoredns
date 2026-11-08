@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-07 (#6)
+- **test:** #6 verified on fresh build VMs (`health { lameduck 3s }`, `ready`, `reload`). The SIGHUP reload took 0.0 s; `/health` and `/ready` stayed 200 right after it, 4 s later and after a Corefile-edit reload. At SIGTERM, `/health` stayed 200, `/ready` went 503, DNS still answered, and the exit waited out the lameduck. A negative control on the commit before the fix (395e2a4^) failed: the reload took 3.1 s and `/health` stayed 503 for good. Filed stormcos#897: its `/health` liveness probe is safe now.
+
 ### 2026-11-07 (#8)
 - **test:** #8 verified on fresh build VMs: `.:1054` with `reload` answered over IPv4 and IPv6 and listened on `*:1054` before a reload, after SIGHUP and after a Corefile edit. The same check on the commit before the fix (f195c04^) reproduced the bug: after either reload IPv6 timed out and the listener was `0.0.0.0:1054`.
 

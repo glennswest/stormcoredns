@@ -200,11 +200,11 @@ Checked against CoreDNS v1.12.4 `plugin/file/secondary.go` and `plugin/secondary
 ### Done — #17 presentation: stormcos#79 done (2026-10-07)
 - [x] Checked in stormcos (build-goldens.sh, 80-coredns.yaml, #79 closed 2026-09-30); slide updated in c1b91b4; docs-only, closed
 
-### In progress — #6 lameduck on reload (2026-10-07)
+### Done — #6 lameduck on reload (2026-10-07)
 Checked against CoreDNS v1.12.4: health's lameduck is `OnFinalShutdown` only; `/health` stays 200; ready goes 503.
 - [x] final-shutdown hook kind (`Controller::on_final_shutdown`, `Instance::stop_final` at process exit); health lameduck there; `/health` always 200; `/ready` 503 while draining — pushed through 0fa5bcf
 - [x] unit test `lameduck_only_at_process_exit`; docs, CHANGELOG
-- [ ] **Blocked:** sc-build of `tmp/job_all.sh` (job15 + live8 + live6: /health and /ready across SIGHUP and during the SIGTERM lameduck) — dev.g8.lo unreachable (stormcentral#97). Then stage `coredns`; close #6 with #8, #10–#12, #14, #15; tell stormcos its `/health` liveness probe is safe once released
+- [x] Verified 2026-11-07: `tmp/live6c.sh` at b7caeaa: reload 0.0 s, `/health`+`/ready` 200 after SIGHUP, past the lameduck and after a Corefile edit; at SIGTERM health 200 / ready 503 / DNS answers, exit after the lameduck. Negative control at 395e2a4^ (`SC_BUILD_EXPECT_FAIL=1`): reload 3.1 s, `/health` 503 for good. Fix in the staged `coredns` golden (a40e9b2); stormcos#897 filed for the liveness probe; #6 closed
 
 ### In progress — #7 a failed reload stops automatic reloads (2026-10-07)
 CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the same broken file) and keeps watching when the restart fails.

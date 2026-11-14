@@ -18,7 +18,7 @@ is [docs/plugin-api.md](docs/plugin-api.md); per-plugin status is in
 Never build on the stormcentral VM and never `ssh root@` anywhere. Push, then:
 
 ```bash
-sc-build                        # cargo build && cargo test on dev.g8.lo, scratch dir, deleted after
+sc-build                        # cargo build --locked && cargo test --locked on a fresh build VM, destroyed after
 sc-build 'cargo test cache'     # any command
 ```
 
@@ -217,3 +217,5 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)
+- [ ] #34 hickory-proto 0.24.4 → ≥ 0.26.2 (CVE-2026-123570, P1)
+- [ ] #33 `/ready` 200 before the kubernetes plugin has synced; #31 watch errors logged without a resume line

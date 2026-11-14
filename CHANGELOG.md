@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-14
+- **docs:** Refreshed from the code (only `kubernetes` `tls` PEM handling and a dnssec test changed since 2026-11-07, both already documented). `sc-build` runs on a fresh build VM, not dev.g8.lo (README, CLAUDE.md, presentation); test counts 90 + 8. plugins.md `kubernetes` carries Findings for #33 and #31; CLAUDE.md lists #34 (hickory-proto CVE), #33, #31 as next.
+
 ### 2026-11-07 (#6)
 - **test:** #6 verified on fresh build VMs (`health { lameduck 3s }`, `ready`, `reload`). The SIGHUP reload took 0.0 s; `/health` and `/ready` stayed 200 right after it, 4 s later and after a Corefile-edit reload. At SIGTERM, `/health` stayed 200, `/ready` went 503, DNS still answered, and the exit waited out the lameduck. A negative control on the commit before the fix (395e2a4^) failed: the reload took 3.1 s and `/health` stayed 503 for good. Filed stormcos#897: its `/health` liveness probe is safe now.
 

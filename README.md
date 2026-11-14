@@ -55,9 +55,9 @@ handled by the Corefile parser.
 The kubernetes plugin has run in a real cluster. On stormcos 11.03
 (2026-09-21), under `80-coredns.yaml` against rustkube, it answered
 `kubernetes.default.svc.cluster.local` → `10.96.0.1` (stormcos CHANGELOG).
-The server's unit tests (`cargo test`, 54 of them) cover the parser,
+The server's unit tests (`cargo test`, 90 of them) cover the parser,
 registry order, rewrite, cache, template, the zone engine, kubernetes name
-parsing, and other areas. `cargo test --workspace` adds the test crate's 6. The deployed server is tested from a pod by the test container in
+parsing, and other areas. `cargo test --workspace` adds the test crate's 8. The deployed server is tested from a pod by the test container in
 `test/` ([test/README.md](test/README.md)), with short, medium and long
 suites per the stormcos test standard (#5). It builds, but it has not yet
 run on a test machine.
@@ -167,8 +167,8 @@ The root package is the workspace's default member, so `cargo build` builds
 only the server, as the golden build does. `test/` (`stormcoredns-test`) is
 built by `test/build.sh`.
 
-`sc-build` fetches the pushed commit onto `dev.g8.lo` as the unprivileged
-build user, builds it in a scratch directory, and deletes that directory. A
+`sc-build` fetches the pushed commit onto a fresh build VM as the unprivileged
+build user, builds it there, and destroys the VM when the job ends. A
 failed build files a `build-failure` issue. No step needs root.
 
 Anywhere else, `cargo build --release` then

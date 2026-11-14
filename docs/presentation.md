@@ -198,7 +198,7 @@ stormcoredns -conf FILE        # default "Corefile"
 stage mode:
 
 ```bash
-sc-build                                                     # build + 54 tests on dev, after git push
+sc-build                                                     # build + tests on a build VM, after git push
 stormcentral component stage coredns --url http://stormcentral.g8.lo
 ```
 

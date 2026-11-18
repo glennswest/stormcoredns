@@ -81,13 +81,7 @@ pub fn build(blocks: Vec<ServerBlock>, opts: &BuildOptions) -> Result<Built> {
             if tokens.is_empty() {
                 continue;
             }
-            let setup = match def.setup {
-                Some(s) => s,
-                None => {
-                    let t = &tokens[0];
-                    bail!("{}:{} - plugin/{}: not implemented in this build", t.file, t.line, def.name);
-                }
-            };
+            let setup = def.setup;
             for (ki, &ci) in index[bi].iter().enumerate() {
                 let key = b.keys[ki].clone();
                 let cfg = &mut configs[ci];

@@ -13,8 +13,9 @@
 //! Credentials: the `aws_access_key` option, `credentials` profile file,
 //! `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`, or the
 //! shared credentials file (`AWS_SHARED_CREDENTIALS_FILE`, default
-//! `~/.aws/credentials`, profile `AWS_PROFILE` or `default`). Web identity
-//! (IRSA), ECS and EC2 instance-metadata credentials are not supported yet.
+//! `~/.aws/credentials`, profile `AWS_PROFILE` or `default`). Those are
+//! the only credential sources; web identity (IRSA), ECS and EC2
+//! instance-metadata credentials are a gap tracked in #23.
 //! Alias record sets are skipped, as in CoreDNS.
 
 use super::cloud::{self, CloudZones, Fetcher};

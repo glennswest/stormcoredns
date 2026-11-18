@@ -214,6 +214,10 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] test `reload_watcher_keeps_watching_and_a_failed_start_cleans_up`, docs, CHANGELOG — pushed
 - [x] Verified 2026-11-07: `tmp/live7c.sh` at 6b064bd: bad edit → old instance serves, same file not retried; good edit reloads; again a second time (2 failures, 2 reloads). Negative control at f52bef3^ (`SC_BUILD_EXPECT_FAIL=1`, branch wip/7-control, deleted): after the first bad edit nothing reloads again. Fix in the staged `coredns` golden (a40e9b2); #7 closed
 
+### Done — #36 no stubs (P-1, 2026-11-18)
+- [x] registry `setup` non-optional (dead "not implemented" branch removed); pprof unknown profile → 404 not 501; route53 docs point at #23
+- [ ] sc-build green; proof grep empty; close #36
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

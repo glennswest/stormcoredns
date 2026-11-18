@@ -71,7 +71,6 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                     let threads = std::fs::read_to_string("/proc/self/status").ok().and_then(|s| s.lines().find(|l| l.starts_with("Threads")).map(|l| l.to_string())).unwrap_or_else(|| "Threads: unknown".into());
                     http_util::text(200, threads)
                 }
-                p if p.starts_with("/debug/pprof/") => http_util::text(501, "profile not available in this build"),
                 _ => http_util::text(404, "not found"),
             }
         });

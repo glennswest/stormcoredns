@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### 2026-11-18 (#36)
-- **refactor:** No stubs. Every directive in the registry has a setup, so `DirectiveDef.setup` is no longer an `Option` and the unreachable "plugin/X: not implemented in this build" error is gone. `pprof` answers 404 (not 501) for profile paths it does not serve. The `route53` module docs name its credential sources and point at #23 for IRSA/ECS/IMDS instead of "not supported yet".
+- **refactor:** No stubs. Every directive in the registry has a setup, so `DirectiveDef.setup` is no longer an `Option` and the unreachable error for a directive without a setup is gone. `pprof` answers 404 (not 501) for profile paths it does not serve. The `route53` module docs name its credential sources and point at #23 for IRSA/ECS/IMDS.
 
 ### 2026-11-14
 - **docs:** Refreshed from the code (only `kubernetes` `tls` PEM handling and a dnssec test changed since 2026-11-07, both already documented). `sc-build` runs on a fresh build VM, not dev.g8.lo (README, CLAUDE.md, presentation); test counts 90 + 8. plugins.md `kubernetes` carries Findings for #33 and #31; CLAUDE.md lists #34 (hickory-proto CVE), #33, #31 as next.

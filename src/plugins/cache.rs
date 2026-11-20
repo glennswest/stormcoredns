@@ -16,7 +16,7 @@
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use async_trait::async_trait;
 use hickory_proto::op::{Message, OpCode, ResponseCode};
-use hickory_proto::rr::RecordType;
+use hickory_proto::rr::{DNSClass, RecordType};
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -110,6 +110,9 @@ impl Item {
     fn to_msg(&self, req: &Request, now: Instant, keepttl: bool) -> Message {
         let mut m = self.msg.clone();
         m.set_id(req.msg.id());
+        // the question as the client sent it (its case), as `SetReply` does
+        m.take_queries();
+        m.add_queries(req.msg.queries().iter().cloned());
         // mirror the query's RD/CD flags
         m.set_recursion_desired(req.msg.recursion_desired());
         m.set_checking_disabled(req.msg.checking_disabled());
@@ -193,14 +196,24 @@ pub struct Cache {
     zones_label: String,
 }
 
-/// Cache key: qname (lowercase), qtype, DO and CD bits.
-pub fn key(name: &str, qtype: RecordType, do_bit: bool, cd: bool) -> u64 {
+/// Cache key: qname (lowercase), qtype, qclass, and the RD, DO and CD
+/// bits — everything of the question that changes the answer
+/// (finding 0c1633c2a684: an IN answer must not answer a CH query, nor an
+/// RD=0 answer an RD=1 query).
+pub fn key(name: &str, qtype: RecordType, qclass: DNSClass, rd: bool, do_bit: bool, cd: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     name.to_ascii_lowercase().hash(&mut h);
     u16::from(qtype).hash(&mut h);
+    u16::from(qclass).hash(&mut h);
+    rd.hash(&mut h);
     do_bit.hash(&mut h);
     cd.hash(&mut h);
     h.finish()
+}
+
+/// The cache key of a request.
+pub fn req_key(req: &Request, name: &str) -> u64 {
+    key(name, req.qtype(), req.qclass(), req.msg.recursion_desired(), req.do_bit(), req.msg.checking_disabled())
 }
 
 impl Cache {
@@ -214,12 +227,25 @@ impl Cache {
             return None;
         }
         let rtype = typify(m);
-        // a reply to a query must carry the question back
-        if m.queries().first().map(|q| q.name().to_ascii().to_ascii_lowercase() != name.to_ascii_lowercase()).unwrap_or(true) {
+        // a reply to a query must carry the whole question back: one
+        // question, same name (any case), type and class
+        let mut qname = name.to_ascii_lowercase();
+        if !qname.ends_with('.') {
+            qname.push('.');
+        }
+        let same_question = m.queries().len() == 1
+            && m.queries().first().is_some_and(|q| {
+                let mut n = q.name().to_ascii().to_ascii_lowercase();
+                if !n.ends_with('.') {
+                    n.push('.');
+                }
+                n == qname && q.query_type() == req.qtype() && q.query_class() == req.qclass()
+            });
+        if !same_question {
             CACHE_DROPS.with_label_values(&[server, &self.zones_label, view]).inc();
             return None;
         }
-        let k = key(name, req.qtype(), req.do_bit(), req.msg.checking_disabled());
+        let k = req_key(req, name);
         let (store, ttl) = match rtype {
             RespType::Success | RespType::Delegation => {
                 if let Some(z) = &self.disable_success {
@@ -265,6 +291,12 @@ impl Cache {
             CACHE_EVICTIONS.with_label_values(&[server, t, &self.zones_label, view]).inc();
         }
         map.put(k, item);
+        drop(map);
+        // one entry per key: a new answer replaces whatever the other store
+        // held for it (finding 67dabaa35868: a refreshed NXDOMAIN must not
+        // stay hidden behind a stale positive entry, nor the reverse)
+        let other = if std::ptr::eq(store, &self.pcache) { &self.ncache } else { &self.pcache };
+        other.shard(k).map.lock().pop(&k);
         Some(ttl)
     }
 
@@ -323,6 +355,9 @@ impl Cache {
             return; // already refreshing
         }
         let mut r2 = req.new_with_question(req.qname(), req.qtype());
+        // the same question, class included, so the answer lands under `k`
+        r2.msg.take_queries();
+        r2.msg.add_queries(req.msg.queries().iter().cloned());
         r2.msg.set_checking_disabled(req.msg.checking_disabled());
         r2.msg.set_recursion_desired(req.msg.recursion_desired());
         if req.do_bit() {
@@ -360,7 +395,7 @@ impl Handler for CacheHandler {
         }
         let server = req.server.clone();
         let view = req.view.clone();
-        let k = key(&name, req.qtype(), req.do_bit(), req.msg.checking_disabled());
+        let k = req_key(req, &name);
         CACHE_REQUESTS.with_label_values(&[&server, &c.zones_label, &view]).inc();
 
         if let Some((m, want_prefetch, stale)) = c.get(k, req, &server, &view) {
@@ -609,6 +644,156 @@ mod tests {
         let m2 = Next::new(&chain).serve(&mut r2).await.unwrap().into_msg().unwrap();
         assert_eq!(m2.id(), r2.msg.id());
         assert_eq!(m2.answers()[0].ttl(), 300);
+    }
+
+    /// Answers with the query's own question, counting calls. `nx` switches
+    /// it to NXDOMAIN; `wrong_type` makes it answer a different qtype.
+    struct Upstream {
+        calls: std::sync::atomic::AtomicU32,
+        nx: AtomicBool,
+        wrong_type: AtomicBool,
+        ttl: u32,
+    }
+    impl Upstream {
+        fn new(ttl: u32) -> Arc<Upstream> {
+            Arc::new(Upstream { calls: Default::default(), nx: AtomicBool::new(false), wrong_type: AtomicBool::new(false), ttl })
+        }
+        fn calls(&self) -> u32 {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+    #[async_trait]
+    impl Handler for Upstream {
+        fn name(&self) -> &'static str {
+            "upstream"
+        }
+        async fn serve_dns(&self, req: &mut Request, _next: Next<'_>) -> DnsResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut m = req.new_reply();
+            if self.wrong_type.load(Ordering::SeqCst) {
+                let mut q = m.take_queries();
+                q[0].set_query_type(RecordType::AAAA);
+                m.add_queries(q);
+            }
+            if self.nx.load(Ordering::SeqCst) {
+                m.set_response_code(ResponseCode::NXDomain);
+            } else {
+                let mut r = Record::from_rdata(req.qname(), self.ttl, RData::A(A::new(10, 0, 0, 1)));
+                r.set_dns_class(req.qclass());
+                m.add_answer(r);
+            }
+            Ok(Reply::Msg(m))
+        }
+    }
+
+    async fn ask(chain: &[Arc<dyn Handler>], mut r: Request) -> Message {
+        Next::new(chain).serve(&mut r).await.unwrap().into_msg().unwrap()
+    }
+
+    fn with_class(name: &str, class: DNSClass) -> Request {
+        let mut r = Request::for_test(name, RecordType::A);
+        let mut q = r.msg.take_queries();
+        q[0].set_query_class(class);
+        r.msg.add_queries(q);
+        r
+    }
+
+    // finding 0c1633c2a684
+    #[tokio::test]
+    async fn key_separates_class_and_rd() {
+        let c = cache();
+        let up = Upstream::new(300);
+        let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), up.clone()];
+
+        let m = ask(&chain, with_class("example.org.", DNSClass::IN)).await;
+        assert_eq!(m.queries()[0].query_class(), DNSClass::IN);
+        assert_eq!(up.calls(), 1);
+        // a CH query is not answered with the cached IN answer
+        let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
+        assert_eq!(up.calls(), 2);
+        assert_eq!(m.queries()[0].query_class(), DNSClass::CH);
+        assert_eq!(m.answers()[0].dns_class(), DNSClass::CH);
+        // each class now hits its own entry
+        let m = ask(&chain, with_class("example.org.", DNSClass::IN)).await;
+        assert_eq!(m.answers()[0].dns_class(), DNSClass::IN);
+        let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
+        assert_eq!(m.answers()[0].dns_class(), DNSClass::CH);
+        assert_eq!(up.calls(), 2);
+
+        // RD=0 does not share the RD=1 entry
+        let mut r = Request::for_test("example.org.", RecordType::A);
+        r.msg.set_recursion_desired(false);
+        let m = ask(&chain, r).await;
+        assert_eq!(up.calls(), 3);
+        assert!(!m.recursion_desired());
+        let mut r = Request::for_test("example.org.", RecordType::A);
+        r.msg.set_recursion_desired(false);
+        ask(&chain, r).await;
+        assert_eq!(up.calls(), 3);
+
+        // a hit carries the client's question, in the client's case
+        let m = ask(&chain, Request::for_test("ExAmPlE.org.", RecordType::A)).await;
+        assert_eq!(up.calls(), 3);
+        assert_eq!(m.queries()[0].name().to_ascii(), "ExAmPlE.org.");
+    }
+
+    // finding 0c1633c2a684: validate the full question before storing
+    #[tokio::test]
+    async fn reply_for_another_question_is_not_cached() {
+        let c = cache();
+        let up = Upstream::new(300);
+        up.wrong_type.store(true, Ordering::SeqCst);
+        let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), up.clone()];
+        ask(&chain, Request::for_test("example.org.", RecordType::A)).await;
+        ask(&chain, Request::for_test("example.org.", RecordType::A)).await;
+        assert_eq!(up.calls(), 2);
+        assert_eq!(c.pcache.len() + c.ncache.len(), 0);
+    }
+
+    // finding 67dabaa35868
+    #[tokio::test]
+    async fn refreshed_denial_replaces_stale_positive() {
+        let mut c = Arc::try_unwrap(cache()).ok().unwrap();
+        c.minpttl = Duration::ZERO; // TTL 0: stale at once
+        c.stale_upto = Duration::from_secs(3600);
+        c.refresh_mode = RefreshMode::Immediate;
+        let c = Arc::new(c);
+        let up = Upstream::new(0);
+        let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), up.clone()];
+
+        let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
+        assert_eq!(m.answers().len(), 1);
+        // the name is deleted upstream; the stale answer is served once and
+        // refreshed in the background
+        up.nx.store(true, Ordering::SeqCst);
+        let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
+        assert_eq!(m.answers().len(), 1);
+        for _ in 0..200 {
+            if up.calls() == 2 && c.inflight.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(up.calls(), 2);
+        assert_eq!(c.pcache.len(), 0);
+        assert_eq!(c.ncache.len(), 1);
+        // from now on the denial answers, from the cache
+        let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
+        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(up.calls(), 2);
+
+        // and the reverse: a positive answer replaces a cached denial
+        let k = req_key(&Request::for_test("gone.example.org.", RecordType::A), "gone.example.org.");
+        up.nx.store(false, Ordering::SeqCst);
+        let mut r = Request::for_test("gone.example.org.", RecordType::A);
+        let mut fresh = r.new_reply();
+        fresh.add_answer(Record::from_rdata(r.qname(), 300, RData::A(A::new(10, 0, 0, 2))));
+        let name = r.name();
+        c.insert(&r, &fresh, &name, "", "");
+        assert!(c.ncache.shard(k).map.lock().peek(&k).is_none());
+        let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
+        assert_eq!(m.response_code(), ResponseCode::NoError);
+        assert_eq!(m.answers().len(), 1);
     }
 
     #[test]

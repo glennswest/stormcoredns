@@ -219,6 +219,12 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] sc-build green at 6eb3891 (build VM c026537c32: no warnings, 90+8 tests; pprof stats/heap/goroutine 200, profile/cmdline 404; unknown directive exits 1); the issue's proof grep empty; #36 closed
 - clippy `--all-targets -D warnings` has ~40 pre-existing lints and is not in the build yet: #37
 
+### In progress — #38 cache review findings (2026-11-20)
+- [x] 0c1633c2a684: key = qname, qtype, qclass, RD, DO, CD; full question checked before storing; hit returns the client's question; refresh keeps the class
+- [x] 67dabaa35868: an insert pops the key from the other store
+- [x] tests `key_separates_class_and_rd`, `reply_for_another_question_is_not_cached`, `refreshed_denial_replaces_stale_positive`; docs/plugins.md, CHANGELOG
+- [ ] sc-build green, stage `coredns`, close #38
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

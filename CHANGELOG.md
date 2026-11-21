@@ -4,11 +4,11 @@
 
 ### 2026-11-21 (#41)
 - **fix:** DoQ: a length-prefixed message shorter than a DNS header (12 bytes) closes the connection with DOQ_PROTOCOL_ERROR. Before, the server read a message id that was not there and the stream task panicked (finding 23d52725c438). Test `short_frames_are_protocol_errors_not_panics`.
-- **fix:** A bare-number duration that is negative, NaN, infinite or too large (`-1`, `NaN`, `inf`, `1e300`) is a config error instead of a panic at startup or reload (finding 495584334d10). Cases added to `durations`.
+- **fix:** A bare-number duration that is negative, NaN, infinite or too large (`-1`, `NaN`, `inf`, `1e300`) is a config error instead of a panic at startup or reload (finding 495584334d10). Cases added to `durations`. Both verified by sc-build at d34a85a.
 - Finding 003914501935 (a cache hit carried the first client's question case) was already fixed in #38 (1a6069a, test `key_separates_class_and_rd`).
 
 ### 2026-11-21 (#40)
-- **fix:** `forward` with every upstream down (each at `max_fails`) now tries each upstream once, in list order, instead of only the last one, so a working earlier upstream answers instead of the client getting SERVFAIL until its health check clears (finding 71e333f1fe16). An upstream is tried at most once per query; when a healthy upstream fails and so all are down, the ones skipped as down still get their try. Tests `picker_tries_each_proxy_once_when_all_are_down` and `all_down_retries_a_working_earlier_upstream` (real UDP upstreams).
+- **fix:** `forward` with every upstream down (each at `max_fails`) now tries each upstream once, in list order, instead of only the last one, so a working earlier upstream answers instead of the client getting SERVFAIL until its health check clears (finding 71e333f1fe16). An upstream is tried at most once per query; when a healthy upstream fails and so all are down, the ones skipped as down still get their try. Tests `picker_tries_each_proxy_once_when_all_are_down` and `all_down_retries_a_working_earlier_upstream` (real UDP upstreams). Verified by sc-build at d34a85a; the live test on the old loop failed.
 
 ### 2026-11-20 (#39)
 - **fix:** DoH POST bodies are limited to 65535 bytes while they are read: a `content-length` past the limit gets 400 before any of the body is read, and a chunked body that passes it gets 400 as soon as it does, instead of the whole body being buffered first (finding 79d70052c48c). Test `post_body_past_the_limit_is_refused_while_read` against a real listener. Verified by sc-build at b474caa; the same test on the old code failed (no answer to a 100 MB `content-length` within 5 s).

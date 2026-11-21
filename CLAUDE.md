@@ -229,17 +229,17 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] finding 79d70052c48c: `content-length` > 65535 → 400 before reading; `Limited` stops a chunked body at 65535; test `post_body_past_the_limit_is_refused_while_read`; docs/architecture.md, CHANGELOG
 - [x] sc-build green at b474caa (94 tests, no warnings); negative control at the old body read (`SC_BUILD_EXPECT_FAIL=1`, branch wip/39-control, deleted): no answer to a 100 MB `content-length` in 5 s. Stage build 1960ff4c25ab; #39 closed
 
-### In progress — #40 forward: all upstreams down (2026-11-21)
+### Done — #40 forward: all upstreams down (2026-11-21)
 - [x] finding 71e333f1fe16: `Picker` — healthy proxies in order, then (all down) each untried proxy once, from the first; tests `picker_tries_each_proxy_once_when_all_are_down`, `all_down_retries_a_working_earlier_upstream`; docs/plugins.md, CHANGELOG
-- [x] negative control (`SC_BUILD_EXPECT_FAIL=1`, branch wip/40-control at 5dadeef, old loop + the live test, deleted): `all_down_retries_a_working_earlier_upstream` failed, as the finding says
-- [x] first sc-build at b4f61c2: 95/96, `Picker` panicked on an empty list (fixed in 4a084db)
-- [ ] sc-build green at 4a084db (blocked: stormcentral#1638, `/home` full → build submits get an empty job id), stage `coredns`, close #40
+- [x] negative control (`SC_BUILD_EXPECT_FAIL=1`, branch wip/40-control at 5dadeef, old loop + the live test, deleted): the live test failed, as the finding says; first build at b4f61c2 found `Picker` panicking on an empty list (fixed in 4a084db)
+- [x] sc-build green at d34a85a (job 8c0d3c167a: 97+8 tests, no warnings); #40 closed
 
-### In progress — #41 three minor findings (2026-11-21)
+### Done — #41 three minor findings (2026-11-21)
 - [x] 23d52725c438: DoQ `check_frame` needs ≥ 12 bytes of message; test `short_frames_are_protocol_errors_not_panics`
 - [x] 495584334d10: `parse_duration` uses `Duration::try_from_secs_f64`; -1/NaN/inf/1e300 cases in `durations`
 - [x] 003914501935: already fixed in #38 (1a6069a)
-- [ ] sc-build green (needs stormcentral#1638 cleared, as #40), stage `coredns`, close #41
+- [x] sc-build green at d34a85a (job 8c0d3c167a); #41 closed
+- Staging `coredns` at d34a85a was refused (403: "coredns is not built from glennswest/stormcoredns"; coredns missing from `component list`, though #39 staged earlier the same day) — sent to the master with `stormcentral note`
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

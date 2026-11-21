@@ -426,7 +426,8 @@ impl Picker {
     fn next(&mut self, down: impl Fn(usize) -> bool) -> Option<usize> {
         loop {
             if self.i >= self.n {
-                if self.fallback || !(0..self.n).all(&down) {
+                // (an empty list has no fallback: `all` is true for it)
+                if self.fallback || self.n == 0 || !(0..self.n).all(&down) {
                     return None;
                 }
                 self.fallback = true;

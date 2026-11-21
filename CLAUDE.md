@@ -229,6 +229,10 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] finding 79d70052c48c: `content-length` > 65535 → 400 before reading; `Limited` stops a chunked body at 65535; test `post_body_past_the_limit_is_refused_while_read`; docs/architecture.md, CHANGELOG
 - [x] sc-build green at b474caa (94 tests, no warnings); negative control at the old body read (`SC_BUILD_EXPECT_FAIL=1`, branch wip/39-control, deleted): no answer to a 100 MB `content-length` in 5 s. Stage build 1960ff4c25ab; #39 closed
 
+### In progress — #40 forward: all upstreams down (2026-11-21)
+- [x] finding 71e333f1fe16: `Picker` — healthy proxies in order, then (all down) each untried proxy once, from the first; tests `picker_tries_each_proxy_once_when_all_are_down`, `all_down_retries_a_working_earlier_upstream`; docs/plugins.md, CHANGELOG
+- [ ] sc-build green + negative control, stage `coredns`, close #40
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

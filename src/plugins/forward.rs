@@ -404,40 +404,62 @@ impl Handler for ForwardHandler {
     }
 }
 
+/// The order in which one request tries the proxies of its list (#40,
+/// finding 71e333f1fe16). A first pass takes each healthy proxy in list
+/// order. If it reaches the end with every proxy down (health checking may
+/// be broken), a fallback pass takes, in list order, each proxy this request
+/// has not tried yet, ignoring health. Each proxy is tried at most once.
+struct Picker {
+    n: usize,
+    i: usize,
+    fallback: bool,
+    tried: Vec<bool>,
+}
+
+impl Picker {
+    fn new(n: usize) -> Picker {
+        Picker { n, i: 0, fallback: false, tried: vec![false; n] }
+    }
+
+    /// The index of the next proxy to try, `down(k)` telling whether proxy
+    /// `k` is down now; `None` when there is none left.
+    fn next(&mut self, down: impl Fn(usize) -> bool) -> Option<usize> {
+        loop {
+            if self.i >= self.n {
+                if self.fallback || !(0..self.n).all(&down) {
+                    return None;
+                }
+                self.fallback = true;
+                self.i = 0;
+            }
+            let k = self.i;
+            self.i += 1;
+            if !self.tried[k] && (self.fallback || !down(k)) {
+                self.tried[k] = true;
+                return Some(k);
+            }
+        }
+    }
+}
+
 impl ForwardHandler {
     async fn forward(&self, req: &mut Request) -> DnsResult {
         let f = &self.0;
         let list = f.list();
         let mut last_err: Option<anyhow::Error> = None;
         let mut fails = 0;
-        let mut tried_any_down = false;
         // CoreDNS's 5 s overall budget, or the `cancel` deadline if sooner
         let budget = Instant::now() + Duration::from_secs(5);
         let deadline = req.deadline.map_or(budget, |d| d.min(budget));
-        let mut i = 0;
+        let mut pick = Picker::new(list.len());
         let mut last_reply: Option<Message> = None;
         loop {
             if Instant::now() >= deadline {
                 break;
             }
-            // pick the next healthy proxy; if all are down, try each once anyway
-            let p = loop {
-                if i >= list.len() {
-                    break None;
-                }
-                let p = list[i].clone();
-                i += 1;
-                if !p.down(f.max_fails) {
-                    break Some(p);
-                }
-                if !tried_any_down && i == list.len() && list.iter().all(|p| p.down(f.max_fails)) {
-                    tried_any_down = true;
-                    // all down: retry the list once from the start, ignoring health
-                    i = 0;
-                    break Some(p);
-                }
-            };
-            let Some(p) = p else { break };
+            // the next healthy proxy; if all are down, each one not yet tried, once
+            let Some(k) = pick.next(|k| list[k].down(f.max_fails)) else { break };
+            let p = list[k].clone();
             let tried = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), f.connect(&p, req)).await;
             match tried.unwrap_or_else(|_| Err(anyhow!("i/o timeout"))) {
                 Ok(mut resp) => {
@@ -449,7 +471,8 @@ impl ForwardHandler {
                     }
                     p.fails.store(0, Ordering::Relaxed);
                     let rc = resp.response_code();
-                    if f.failover_rcodes.contains(&rc) && i < list.len() {
+                    if f.failover_rcodes.contains(&rc) {
+                        // try the next upstream; this reply is the answer if none is left
                         last_reply = Some(resp);
                         continue;
                     }
@@ -736,6 +759,48 @@ mod tests {
         let mut req = Request::for_test("example.org.", RecordType::A);
         let r = first.serve_dns(&mut req, Next::new(&[])).await.unwrap();
         assert_eq!(r.rcode(), ResponseCode::NXDomain);
+    }
+
+    #[test]
+    fn picker_tries_each_proxy_once_when_all_are_down() {
+        let order = |down: &[bool], fail_down: bool| {
+            let mut down = down.to_vec();
+            let mut p = Picker::new(down.len());
+            let mut out = Vec::new();
+            while let Some(k) = p.next(|k| down[k]) {
+                out.push(k);
+                if fail_down {
+                    down[k] = true; // the attempt failed and took it down
+                }
+            }
+            out
+        };
+        // all down: every proxy, from the first (finding 71e333f1fe16: only the last)
+        assert_eq!(order(&[true, true, true], false), vec![0, 1, 2]);
+        // healthy ones only while one is healthy
+        assert_eq!(order(&[true, false, true], false), vec![1]);
+        // the healthy one fails and goes down: the rest get their try, it does not get a second
+        assert_eq!(order(&[true, false, true], true), vec![1, 0, 2]);
+        assert_eq!(order(&[false, false], true), vec![0, 1]);
+        assert_eq!(order(&[], false), Vec::<usize>::new());
+    }
+
+    #[tokio::test]
+    async fn all_down_retries_a_working_earlier_upstream() {
+        // both upstreams have reached max_fails; the first works, the last never answers
+        let ok = fake_upstream(ResponseCode::NoError);
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let f = ctl_parse(&format!("forward . {} {} {{\n policy sequential\n}}\n", ok, silent.local_addr().unwrap())).unwrap();
+        for p in &f.proxies {
+            p.fails.store(f.max_fails, Ordering::Relaxed);
+            p.probing.store(true, Ordering::SeqCst); // no health check resets the count
+        }
+        let h = ForwardHandler(Arc::new(f));
+        let mut req = Request::for_test("example.org.", RecordType::A);
+        req.deadline = Some(Instant::now() + Duration::from_secs(2));
+        let r = h.forward(&mut req).await.expect("the working upstream answers");
+        assert_eq!(r.rcode(), ResponseCode::NoError);
+        assert_eq!(h.0.proxies[0].fails(), 0);
     }
 
     #[test]

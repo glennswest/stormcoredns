@@ -231,7 +231,9 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 
 ### In progress — #40 forward: all upstreams down (2026-11-21)
 - [x] finding 71e333f1fe16: `Picker` — healthy proxies in order, then (all down) each untried proxy once, from the first; tests `picker_tries_each_proxy_once_when_all_are_down`, `all_down_retries_a_working_earlier_upstream`; docs/plugins.md, CHANGELOG
-- [ ] sc-build green + negative control, stage `coredns`, close #40
+- [x] negative control (`SC_BUILD_EXPECT_FAIL=1`, branch wip/40-control at 5dadeef, old loop + the live test, deleted): `all_down_retries_a_working_earlier_upstream` failed, as the finding says
+- [x] first sc-build at b4f61c2: 95/96, `Picker` panicked on an empty list (fixed in 4a084db)
+- [ ] sc-build green at 4a084db (blocked: stormcentral#1638, `/home` full → build submits get an empty job id), stage `coredns`, close #40
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

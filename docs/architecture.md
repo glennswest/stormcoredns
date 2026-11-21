@@ -72,7 +72,9 @@ A server-block key is `[scheme://]zone[:port]` (`src/server/config.rs`):
 `quic` (853, DoQ), `grpc` (443, `coredns.dns.DnsService/Query`). `tls://`
 and `quic://` need the `tls` plugin; `https://` and `grpc://` fall back to
 plaintext with a warning. `-dns.port`/`PORT` only change `dns://` keys
-without a port.
+without a port. A DoH POST body is limited to 65535 bytes (one DNS
+message) while it is read: a larger `content-length` or chunked body gets
+400 without being buffered.
 
 One `Server` per (transport, bind address). Zone dispatch is the CoreDNS
 algorithm: strip labels from the query name until a configured zone

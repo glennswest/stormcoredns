@@ -225,6 +225,10 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] tests `key_separates_class_and_rd`, `reply_for_another_question_is_not_cached`, `refreshed_denial_replaces_stale_positive`; docs/plugins.md, CHANGELOG
 - [ ] sc-build green, stage `coredns`, close #38
 
+### In progress — #39 DoH POST body limit (2026-11-20)
+- [x] finding 79d70052c48c: `content-length` > 65535 → 400 before reading; `Limited` stops a chunked body at 65535; test `post_body_past_the_limit_is_refused_while_read`; docs/architecture.md, CHANGELOG
+- [ ] sc-build green, stage `coredns`, close #39
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

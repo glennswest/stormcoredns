@@ -6,7 +6,7 @@ use super::Server;
 use crate::plugin::{HttpInfo, Proto};
 use base64::Engine;
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -18,6 +18,9 @@ use tokio_util::sync::CancellationToken;
 
 pub const DOH_PATH: &str = "/dns-query";
 pub const MIME: &str = "application/dns-message";
+/// The largest DNS message (RFC 1035 4.2.2's 16-bit length). A POST body past
+/// it is refused while it is read, before it is buffered (finding 79d70052c48c).
+pub const MAX_MESSAGE: usize = 65535;
 
 pub async fn run_https(srv: Arc<Server>, listener: TcpListener, cancel: CancellationToken) {
     let acceptor = srv.tls.clone().map(TlsAcceptor::from);
@@ -115,15 +118,22 @@ async fn handle(srv: Arc<Server>, req: Request<Incoming>, remote: SocketAddr, lo
             if !ct.starts_with(MIME) {
                 return status(&srv, StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type");
             }
-            match tokio::time::timeout(srv.read_timeout, req.into_body().collect()).await {
+            // a declared length past the limit is refused before reading any of it
+            let declared = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok());
+            if declared.is_some_and(|n| n > MAX_MESSAGE as u64) {
+                return status(&srv, StatusCode::BAD_REQUEST, "bad message size");
+            }
+            // and a chunked (or lying) body stops as soon as it passes the limit
+            match tokio::time::timeout(srv.read_timeout, Limited::new(req.into_body(), MAX_MESSAGE).collect()).await {
                 Ok(Ok(c)) => c.to_bytes().to_vec(),
+                Ok(Err(e)) if e.downcast_ref::<LengthLimitError>().is_some() => return status(&srv, StatusCode::BAD_REQUEST, "bad message size"),
                 Ok(Err(_)) => return status(&srv, StatusCode::BAD_REQUEST, "bad body"),
                 Err(_) => return status(&srv, StatusCode::REQUEST_TIMEOUT, "read timeout"),
             }
         }
         _ => return status(&srv, StatusCode::METHOD_NOT_ALLOWED, "method not allowed"),
     };
-    if query.len() > 65535 || query.len() < 12 {
+    if query.len() > MAX_MESSAGE || query.len() < 12 {
         return status(&srv, StatusCode::BAD_REQUEST, "bad message size");
     }
     // Use the X-Forwarded-For remote when behind a proxy? CoreDNS does not; neither do we.
@@ -147,5 +157,99 @@ async fn handle(srv: Arc<Server>, req: Request<Incoming>, remote: SocketAddr, lo
                 .unwrap()
         }
         None => status(&srv, StatusCode::BAD_REQUEST, "bad request"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::config::Transport;
+    use std::collections::HashMap;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A plain-HTTP DoH listener on 127.0.0.1 with no zones; `read` is long so
+    /// that only the size limit can answer a request that never ends.
+    async fn doh() -> (SocketAddr, CancellationToken) {
+        let srv = Arc::new(Server {
+            label: "https://:0".into(),
+            transport: Transport::Https,
+            addrs: vec![],
+            zones: HashMap::new(),
+            tls: None,
+            read_timeout: Duration::from_secs(30),
+            write_timeout: Duration::from_secs(5),
+            idle_timeout: Duration::from_secs(30),
+            num_sockets: 1,
+            graceful_timeout: Duration::from_secs(1),
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cancel = CancellationToken::new();
+        tokio::spawn(run_https(srv, listener, cancel.clone()));
+        (addr, cancel)
+    }
+
+    /// Reads until the status line is in; "" when the server closed first.
+    async fn status_line(rd: &mut (impl AsyncReadExt + Unpin)) -> String {
+        let mut got = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !got.windows(2).any(|w| w == b"\r\n") {
+            match rd.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => got.extend_from_slice(&buf[..n]),
+            }
+        }
+        String::from_utf8_lossy(&got).lines().next().unwrap_or("").to_string()
+    }
+
+    fn post_head(extra: &str) -> String {
+        format!("POST {} HTTP/1.1\r\nhost: t\r\ncontent-type: {}\r\n{}\r\n", DOH_PATH, MIME, extra)
+    }
+
+    #[tokio::test]
+    async fn post_body_past_the_limit_is_refused_while_read() {
+        let (addr, cancel) = doh().await;
+
+        // a declared length past 65535: refused with no body sent at all
+        let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        c.write_all(post_head("content-length: 100000000\r\n").as_bytes()).await.unwrap();
+        let line = tokio::time::timeout(Duration::from_secs(5), status_line(&mut c)).await.expect("answered before the body");
+        assert!(line.starts_with("HTTP/1.1 400"), "declared length: {line}");
+
+        // a chunked body that never ends: refused once it passes the limit,
+        // long before read_timeout (30 s), with the rest never read
+        let c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let (mut rd, mut wr) = c.into_split();
+        let writer = tokio::spawn(async move {
+            let mut sent = 0usize;
+            if wr.write_all(post_head("transfer-encoding: chunked\r\n").as_bytes()).await.is_err() {
+                return sent;
+            }
+            let chunk = format!("4000\r\n{}\r\n", "a".repeat(0x4000));
+            // up to 8 MiB, then stall without the last chunk
+            while sent < 8 << 20 {
+                if wr.write_all(chunk.as_bytes()).await.is_err() {
+                    break;
+                }
+                sent += 0x4000;
+            }
+            std::future::pending::<()>().await;
+            sent
+        });
+        let line = tokio::time::timeout(Duration::from_secs(10), status_line(&mut rd)).await.expect("answered before read_timeout");
+        assert!(line.starts_with("HTTP/1.1 400"), "chunked: {line}");
+        writer.abort();
+
+        // a real query still gets through
+        let mut m = hickory_proto::op::Message::query();
+        m.add_query(hickory_proto::op::Query::query("example.org.".parse().unwrap(), hickory_proto::rr::RecordType::A));
+        let q = m.to_vec().unwrap();
+        let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        c.write_all(post_head(&format!("content-length: {}\r\n", q.len())).as_bytes()).await.unwrap();
+        c.write_all(&q).await.unwrap();
+        let line = tokio::time::timeout(Duration::from_secs(5), status_line(&mut c)).await.unwrap();
+        assert!(line.starts_with("HTTP/1.1 200"), "small query: {line}");
+        cancel.cancel();
     }
 }

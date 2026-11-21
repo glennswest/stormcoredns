@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-20 (#39)
+- **fix:** DoH POST bodies are limited to 65535 bytes while they are read: a `content-length` past the limit gets 400 before any of the body is read, and a chunked body that passes it gets 400 as soon as it does, instead of the whole body being buffered first (finding 79d70052c48c). Test `post_body_past_the_limit_is_refused_while_read` against a real listener.
+
 ### 2026-11-20 (#38)
 - **fix:** `cache` key now includes the query class and the RD bit, and a reply is stored only when its question matches the query's name, type and class; a hit carries the client's own question. An IN answer no longer answers a CH query, nor an RD=0 answer an RD=1 query (finding 0c1633c2a684).
 - **fix:** `cache` keeps one entry per key: storing a success removes the key's denial entry and the reverse, so a refreshed NXDOMAIN after `serve_stale` replaces the stale positive answer instead of hiding behind it (finding 67dabaa35868). The background refresh queries with the original class.

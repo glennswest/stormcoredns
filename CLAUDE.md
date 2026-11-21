@@ -235,6 +235,12 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] first sc-build at b4f61c2: 95/96, `Picker` panicked on an empty list (fixed in 4a084db)
 - [ ] sc-build green at 4a084db (blocked: stormcentral#1638, `/home` full → build submits get an empty job id), stage `coredns`, close #40
 
+### In progress — #41 three minor findings (2026-11-21)
+- [x] 23d52725c438: DoQ `check_frame` needs ≥ 12 bytes of message; test `short_frames_are_protocol_errors_not_panics`
+- [x] 495584334d10: `parse_duration` uses `Duration::try_from_secs_f64`; -1/NaN/inf/1e300 cases in `durations`
+- [x] 003914501935: already fixed in #38 (1a6069a)
+- [ ] sc-build green (needs stormcentral#1638 cleared, as #40), stage `coredns`, close #41
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

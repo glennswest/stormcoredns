@@ -74,7 +74,9 @@ and `quic://` need the `tls` plugin; `https://` and `grpc://` fall back to
 plaintext with a warning. `-dns.port`/`PORT` only change `dns://` keys
 without a port. A DoH POST body is limited to 65535 bytes (one DNS
 message) while it is read: a larger `content-length` or chunked body gets
-400 without being buffered.
+400 without being buffered. A DoQ stream whose two-byte length does not
+match, whose message is shorter than a DNS header (12 bytes), or whose
+message id is not 0 closes the connection with DOQ_PROTOCOL_ERROR (RFC 9250).
 
 One `Server` per (transport, bind address). Zone dispatch is the CoreDNS
 algorithm: strip labels from the query name until a configured zone

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-11-21 (#41)
+- **fix:** DoQ: a length-prefixed message shorter than a DNS header (12 bytes) closes the connection with DOQ_PROTOCOL_ERROR. Before, the server read a message id that was not there and the stream task panicked (finding 23d52725c438). Test `short_frames_are_protocol_errors_not_panics`.
+- **fix:** A bare-number duration that is negative, NaN, infinite or too large (`-1`, `NaN`, `inf`, `1e300`) is a config error instead of a panic at startup or reload (finding 495584334d10). Cases added to `durations`.
+- Finding 003914501935 (a cache hit carried the first client's question case) was already fixed in #38 (1a6069a, test `key_separates_class_and_rd`).
+
 ### 2026-11-21 (#40)
 - **fix:** `forward` with every upstream down (each at `max_fails`) now tries each upstream once, in list order, instead of only the last one, so a working earlier upstream answers instead of the client getting SERVFAIL until its health check clears (finding 71e333f1fe16). An upstream is tried at most once per query; when a healthy upstream fails and so all are down, the ones skipped as down still get their try. Tests `picker_tries_each_proxy_once_when_all_are_down` and `all_down_retries_a_working_earlier_upstream` (real UDP upstreams).
 

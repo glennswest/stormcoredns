@@ -338,7 +338,8 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         return Ok(Duration::from_secs(secs));
     }
     if let Ok(f) = s.parse::<f64>() {
-        return Ok(Duration::from_secs_f64(f));
+        // finding 495584334d10: -1, NaN, inf and huge values are errors, not panics
+        return Duration::try_from_secs_f64(f).map_err(|e| anyhow!("invalid duration '{}': {}", s, e));
     }
     humantime::parse_duration(s).map_err(|e| anyhow!("invalid duration '{}': {}", s, e))
 }
@@ -522,6 +523,11 @@ mod tests {
         assert_eq!(parse_duration("30").unwrap(), Duration::from_secs(30));
         assert_eq!(parse_duration("1m30s").unwrap(), Duration::from_secs(90));
         assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+        // finding 495584334d10: errors, not panics
+        for bad in ["-1", "-0.5", "NaN", "nan", "inf", "-inf", "1e300"] {
+            assert!(parse_duration(bad).is_err(), "{bad}");
+        }
+        assert_eq!(parse_duration("1.5").unwrap(), Duration::from_millis(1500));
     }
 
     #[test]

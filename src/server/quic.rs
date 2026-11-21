@@ -95,20 +95,8 @@ async fn handle_stream(
             return;
         }
     };
-    if data.len() < 2 {
-        conn.close(quinn::VarInt::from_u32(DOQ_PROTOCOL_ERROR), b"short");
-        crate::metrics::QUIC_RESPONSES.with_label_values(&[&srv.label, "0x2"]).inc();
-        return;
-    }
-    let len = u16::from_be_bytes([data[0], data[1]]) as usize;
-    if data.len() != len + 2 {
-        conn.close(quinn::VarInt::from_u32(DOQ_PROTOCOL_ERROR), b"length");
-        crate::metrics::QUIC_RESPONSES.with_label_values(&[&srv.label, "0x2"]).inc();
-        return;
-    }
-    // RFC 9250 §4.2.1: the message id must be 0
-    if data[2] != 0 || data[3] != 0 {
-        conn.close(quinn::VarInt::from_u32(DOQ_PROTOCOL_ERROR), b"id");
+    if let Err(why) = check_frame(&data) {
+        conn.close(quinn::VarInt::from_u32(DOQ_PROTOCOL_ERROR), why);
         crate::metrics::QUIC_RESPONSES.with_label_values(&[&srv.label, "0x2"]).inc();
         return;
     }
@@ -120,5 +108,47 @@ async fn handle_stream(
             let _ = send.finish();
             crate::metrics::QUIC_RESPONSES.with_label_values(&[&srv.label, "0x0"]).inc();
         }
+    }
+}
+
+/// The DoQ framing checks (RFC 9250 §4.2): a two-byte length that matches
+/// the rest of the stream, at least a DNS header after it, and message id 0.
+/// `Err` carries the reason sent with DOQ_PROTOCOL_ERROR.
+fn check_frame(data: &[u8]) -> Result<(), &'static [u8]> {
+    if data.len() < 2 {
+        return Err(b"short");
+    }
+    let len = u16::from_be_bytes([data[0], data[1]]) as usize;
+    if data.len() != len + 2 {
+        return Err(b"length");
+    }
+    // finding 23d52725c438: a shorter message has no id to check
+    if len < 12 {
+        return Err(b"short");
+    }
+    // RFC 9250 §4.2.1: the message id must be 0
+    if data[2] != 0 || data[3] != 0 {
+        return Err(b"id");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::check_frame;
+
+    #[test]
+    fn short_frames_are_protocol_errors_not_panics() {
+        assert_eq!(check_frame(&[]), Err(&b"short"[..]));
+        assert_eq!(check_frame(&[0]), Err(&b"short"[..]));
+        assert_eq!(check_frame(&[0, 0]), Err(&b"short"[..]));
+        assert_eq!(check_frame(&[0, 1, 0]), Err(&b"short"[..]));
+        assert_eq!(check_frame(&[0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), Err(&b"short"[..]));
+        assert_eq!(check_frame(&[0, 5, 0]), Err(&b"length"[..]));
+        let mut ok = vec![0, 12];
+        ok.extend([0u8; 12]);
+        assert_eq!(check_frame(&ok), Ok(()));
+        ok[3] = 7;
+        assert_eq!(check_frame(&ok), Err(&b"id"[..]));
     }
 }

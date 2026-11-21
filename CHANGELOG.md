@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### 2026-11-20 (#39)
-- **fix:** DoH POST bodies are limited to 65535 bytes while they are read: a `content-length` past the limit gets 400 before any of the body is read, and a chunked body that passes it gets 400 as soon as it does, instead of the whole body being buffered first (finding 79d70052c48c). Test `post_body_past_the_limit_is_refused_while_read` against a real listener.
+- **fix:** DoH POST bodies are limited to 65535 bytes while they are read: a `content-length` past the limit gets 400 before any of the body is read, and a chunked body that passes it gets 400 as soon as it does, instead of the whole body being buffered first (finding 79d70052c48c). Test `post_body_past_the_limit_is_refused_while_read` against a real listener. Verified by sc-build at b474caa; the same test on the old code failed (no answer to a 100 MB `content-length` within 5 s).
 
 ### 2026-11-20 (#38)
 - **fix:** `cache` key now includes the query class and the RD bit, and a reply is stored only when its question matches the query's name, type and class; a hit carries the client's own question. An IN answer no longer answers a CH query, nor an RD=0 answer an RD=1 query (finding 0c1633c2a684).

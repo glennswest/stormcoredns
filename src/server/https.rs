@@ -242,7 +242,7 @@ mod tests {
         writer.abort();
 
         // a real query still gets through
-        let mut m = hickory_proto::op::Message::query();
+        let mut m = hickory_proto::op::Message::new();
         m.add_query(hickory_proto::op::Query::query("example.org.".parse().unwrap(), hickory_proto::rr::RecordType::A));
         let q = m.to_vec().unwrap();
         let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();

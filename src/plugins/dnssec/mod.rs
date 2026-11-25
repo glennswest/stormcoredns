@@ -56,7 +56,6 @@ pub fn incep_expir(now: u64) -> (u32, u32) {
 }
 
 const LOC: RecordType = RecordType::Unknown(29);
-const CERT: RecordType = RecordType::Unknown(37);
 const HIP: RecordType = RecordType::Unknown(55);
 const SPF: RecordType = RecordType::Unknown(99);
 

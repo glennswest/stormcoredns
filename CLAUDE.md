@@ -246,12 +246,13 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] fix: `plugins::starting` → `ready::starting` publishes the new plugins before the startup hooks on a first start (a reload keeps the old list); test `ready_is_503_while_kubernetes_has_not_synced` (dead API, `startup_timeout 3s`: 503 `kubernetes` during and after the wait); instance tests take turns (`INSTANCE_TESTS`)
 - [x] negative control (`SC_BUILD_EXPECT_FAIL=1`, branch wip/33-control without `starting`, deleted): `/ready` (200, "OK") during startup; sc-build green at fa7260f (job ca4fd32ebd: 98 tests, no warnings); stage build a046102d4c13; `shipped` with the kube-dns endpoints proof
 
-### In progress — #34 hickory-proto 0.24.4 → 0.26.4 (P1, CVE-2026-123570; 2026-11-25)
-Target 0.26.3+ (CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); 0.26.4 used. No 0.24/0.25 backport exists. Work on branch `wip/34-hickory`, merged to main once green.
+### Done — #34 hickory-proto 0.24.4 → 0.26.4 (P1, CVE-2026-123570; 2026-11-25)
+Target 0.26.3+ (CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); 0.26.4 used. No 0.24/0.25 backport exists. Worked on branch `wip/34-hickory` (deleted), fast-forwarded to main at 136f571.
 - [x] Cargo.toml (root + test/) → 0.26.4 (`std`, `dnssec-ring`); Cargo.lock from the build VM's `cargo update` diff (no cargo on the session VM)
 - [x] call sites: Message header → `metadata`, sections/EDNS → fields, `take_*` → `mem::take`, Record and rdata getters → fields, DNSSEC paths → `hickory_proto::dnssec`, signing via `SigningKey`/`SigInput`/`TBS`, TSIG via `RData::TSIG`/`Message::signature` (BADTIME now checked by `tsig`), `RecordType::DNAME`/`CERT` exist
 - [x] compile rounds on build VMs (`cargo check --keep-going`): round 5 clean; full test run at 2289074 97/98 (DNAME type) → fixed
-- [ ] sc-build green (build + tests, no warnings), `cargo tree -i hickory-proto` only 0.26.4; merge to main; stage `coredns`; `shipped` (the issue closes when a published release carries it)
+- [x] removing `#![allow(deprecated)]` surfaced `TXT::new`/`NSEC3PARAM::new`: now `dnsutil::txt` (255-octet strings, as CoreDNS `split255`) and `try_new`
+- [x] sc-build green at 136f571 (job c6a197d7e5: 99+8 tests, no warnings; `cargo tree -i hickory-proto` → only v0.26.4); main fast-forwarded; `coredns` staged; `shipped` — the issue closes when a published release carries it (compliance-operations#69)
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

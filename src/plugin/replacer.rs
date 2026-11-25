@@ -191,6 +191,7 @@ pub fn opcode_str(op: hickory_proto::op::OpCode) -> String {
         hickory_proto::op::OpCode::Status => "STATUS".into(),
         hickory_proto::op::OpCode::Notify => "NOTIFY".into(),
         hickory_proto::op::OpCode::Update => "UPDATE".into(),
+        hickory_proto::op::OpCode::Unknown(n) => n.to_string(),
     }
 }
 

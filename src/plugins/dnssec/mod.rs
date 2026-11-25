@@ -108,7 +108,7 @@ fn now_secs() -> u64 {
 /// Is every RRSIG still valid at `t`?
 fn valid_at(sigs: &[Record], t: u64) -> bool {
     sigs.iter().all(|r| match &r.data {
-        RData::DNSSEC(DNSSECRData::RRSIG(s)) => (s.input().sig_expiration.0 as u64) > t,
+        RData::DNSSEC(DNSSECRData::RRSIG(s)) => (s.input().sig_expiration.get() as u64) > t,
         _ => true,
     })
 }
@@ -434,8 +434,8 @@ mod tests {
             let m = q(&d, name, RecordType::A).await;
             assert_eq!(m.metadata.response_code, ResponseCode::NoError, "{}: black lie", name);
             let (r, n) = nsec_of(&m.authorities);
-            assert!(!n.type_bit_maps().contains(&RecordType::A), "{}: A must not be claimed", name);
-            assert!(n.type_bit_maps().contains(&RecordType::AAAA) && n.type_bit_maps().contains(&RecordType::NSEC));
+            assert!(!n.type_set().contains(RecordType::A), "{}: A must not be claimed", name);
+            assert!(n.type_set().contains(RecordType::AAAA) && n.type_set().contains(RecordType::NSEC));
             assert_eq!(r.ttl, 300, "NSEC TTL from the SOA");
             assert_eq!(n.next_domain_name().to_ascii(), format!("\\000.{}", name));
             let c = covered(&m.authorities);
@@ -445,7 +445,7 @@ mod tests {
         let m = q(&d, "nx.example.org.", RecordType::NSEC).await;
         assert!(m.authorities.is_empty());
         let (_, n) = nsec_of(&m.answers);
-        assert!(n.type_bit_maps().contains(&RecordType::NSEC));
+        assert!(n.type_set().contains(RecordType::NSEC));
     }
 
     #[tokio::test]
@@ -454,7 +454,7 @@ mod tests {
         let m = q(&d, "sub.example.org.", RecordType::A).await;
         assert!(!covered(&m.authorities).contains(&RecordType::NS), "the NS set is not signed");
         let (_, n) = nsec_of(&m.authorities);
-        assert_eq!(n.type_bit_maps(), delegation_bitmap().as_slice());
+        assert_eq!(n.type_bit_maps().collect::<std::collections::HashSet<_>>(), delegation_bitmap().into_iter().collect::<std::collections::HashSet<_>>());
         assert_eq!(n.next_domain_name().to_ascii(), "sub\\000.example.org.");
         let m = q(&d, "ds.example.org.", RecordType::A).await;
         assert_eq!(covered(&m.authorities), vec![RecordType::DS]);
@@ -507,7 +507,7 @@ mod tests {
         let req = Request::for_test("www.example.org.", RecordType::A);
         let set = vec![Record::from_rdata(req.qname(), 30, RData::A(A::new(10, 0, 0, 1)))];
         let exp = |sigs: &[Record]| match &sigs[0].data {
-            RData::DNSSEC(DNSSECRData::RRSIG(s)) => s.input().sig_expiration.0,
+            RData::DNSSEC(DNSSECRData::RRSIG(s)) => s.input().sig_expiration.get(),
             _ => panic!(),
         };
         let t0 = now_secs();

@@ -41,8 +41,8 @@ impl DnsKey {
             algorithm: self.algorithm,
             num_labels: labels,
             original_ttl: ttl,
-            sig_expiration: SerialNumber(expiration),
-            sig_inception: SerialNumber(inception),
+            sig_expiration: SerialNumber::new(expiration),
+            sig_inception: SerialNumber::new(inception),
             key_tag: self.key_tag,
             signer_name: signer_name.clone(),
         };

@@ -68,14 +68,14 @@ fn build_messages(req: &Request, mut records: Vec<Record>) -> Vec<Message> {
     let mut out = Vec::new();
     let mut cur = req.new_reply();
     cur.metadata.authoritative = true;
-    *cur.edns = None;
+    cur.edns = None;
     let mut size = 12 + 64;
     let push = |cur: &mut Message, size: &mut usize, r: Record, out: &mut Vec<Message>, req: &Request| {
         let rlen = r.to_bytes().map(|b| b.len()).unwrap_or(64);
         if *size + rlen > MSG_LIMIT && !cur.answers.is_empty() {
             let mut next = req.new_reply();
             next.metadata.authoritative = true;
-            *next.edns = None;
+            next.edns = None;
             out.push(std::mem::replace(cur, next));
             *size = 12 + 64;
         }

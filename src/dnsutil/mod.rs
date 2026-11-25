@@ -405,7 +405,7 @@ pub fn error_reply(req: &Message, rcode: ResponseCode) -> Message {
     let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
     m.metadata.id = req.metadata.id;
     m.metadata.message_type = hickory_proto::op::MessageType::Response;
-    m.metadata.op_code = req.op_code();
+    m.metadata.op_code = req.metadata.op_code;
     m.metadata.recursion_desired = req.metadata.recursion_desired;
     m.metadata.response_code = rcode;
     if let Some(q) = req.queries.first() {

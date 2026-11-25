@@ -174,7 +174,7 @@ mod tests {
         let mut req = Request::for_test("example.org.", RecordType::AXFR);
         match h.serve_dns(&mut req, Next::new(&[])).await.unwrap() {
             Reply::Multi(v) => {
-                let a = v[0].answers;
+                let a = &v[0].answers;
                 assert_eq!(a.len(), 6);
                 assert_eq!(a[0].record_type(), RecordType::SOA);
                 assert_eq!(a[5].record_type(), RecordType::SOA);

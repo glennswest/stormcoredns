@@ -120,7 +120,7 @@ impl Item {
             let age = now.duration_since(self.stored).as_secs() as u32;
             let adjust = |r: &mut hickory_proto::rr::Record| {
                 if r.record_type() != RecordType::OPT {
-                    r.set_ttl(r.ttl().saturating_sub(age));
+                    r.ttl = r.ttl.saturating_sub(age);
                 }
             };
             let mut a = std::mem::take(&mut m.answers);
@@ -137,7 +137,7 @@ impl Item {
         if req.msg.edns.is_some() {
             req.set_edns0(&mut m);
         } else {
-            *m.edns = None;
+            m.edns = None;
         }
         m
     }
@@ -281,7 +281,7 @@ impl Cache {
         };
         let mut stored = m.clone();
         // normalise: strip OPT, we add our own on the way out
-        *stored.edns = None;
+        stored.edns = None;
         let _ = rtype;
         let item = Item { msg: stored, stored: Instant::now(), ttl: ttl.as_secs() as u32, fetches: 0, window_start: Instant::now() };
         let shard = store.shard(k);
@@ -330,7 +330,7 @@ impl Cache {
                     // stale answers carry TTL 0 (CoreDNS behaviour)
                     let zero = |r: &mut hickory_proto::rr::Record| {
                         if r.record_type() != RecordType::OPT {
-                            r.set_ttl(0);
+                            r.ttl = 0;
                         }
                     };
                     let mut a = std::mem::take(&mut m.answers);
@@ -638,12 +638,12 @@ mod tests {
         let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), Arc::new(Static(300))];
         let mut r1 = Request::for_test("example.org.", RecordType::A);
         let m1 = Next::new(&chain).serve(&mut r1).await.unwrap().into_msg().unwrap();
-        assert_eq!(m1.answers[0].ttl(), 300);
+        assert_eq!(m1.answers[0].ttl, 300);
         assert_eq!(c.pcache.len(), 1);
         let mut r2 = Request::for_test("EXAMPLE.org.", RecordType::A);
         let m2 = Next::new(&chain).serve(&mut r2).await.unwrap().into_msg().unwrap();
         assert_eq!(m2.metadata.id, r2.msg.metadata.id);
-        assert_eq!(m2.answers[0].ttl(), 300);
+        assert_eq!(m2.answers[0].ttl, 300);
     }
 
     /// Answers with the query's own question, counting calls. `nx` switches
@@ -679,7 +679,7 @@ mod tests {
                 m.metadata.response_code = ResponseCode::NXDomain;
             } else {
                 let mut r = Record::from_rdata(req.qname(), self.ttl, RData::A(A::new(10, 0, 0, 1)));
-                r.set_dns_class(req.qclass());
+                r.dns_class = req.qclass();
                 m.add_answer(r);
             }
             Ok(Reply::Msg(m))
@@ -712,12 +712,12 @@ mod tests {
         let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
         assert_eq!(up.calls(), 2);
         assert_eq!(m.queries[0].query_class(), DNSClass::CH);
-        assert_eq!(m.answers[0].dns_class(), DNSClass::CH);
+        assert_eq!(m.answers[0].dns_class, DNSClass::CH);
         // each class now hits its own entry
         let m = ask(&chain, with_class("example.org.", DNSClass::IN)).await;
-        assert_eq!(m.answers[0].dns_class(), DNSClass::IN);
+        assert_eq!(m.answers[0].dns_class, DNSClass::IN);
         let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
-        assert_eq!(m.answers[0].dns_class(), DNSClass::CH);
+        assert_eq!(m.answers[0].dns_class, DNSClass::CH);
         assert_eq!(up.calls(), 2);
 
         // RD=0 does not share the RD=1 entry

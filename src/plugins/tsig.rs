@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use hickory_proto::op::{Message, ResponseCode};
 use hickory_proto::rr::rdata::tsig::{make_tsig_record, TsigAlgorithm, TsigError, TSIG};
-use hickory_proto::rr::tsig::TSigner;
+use hickory_proto::rr::TSigner;
 use hickory_proto::rr::{Name, RecordType};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -157,7 +157,7 @@ impl Handler for Tsig {
             Ok(s) => s,
             Err(_) => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadKey))),
         };
-        let (req_mac, _time, window) = match signer.verify_message_byte(&raw, None, true) {
+        let (req_mac, _time, window) = match signer.verify_message_byte(&raw[..], None, true) {
             Ok(v) => v,
             Err(e) => {
                 tracing::debug!("plugin/tsig: verification failed for {}: {}", keyname, e);

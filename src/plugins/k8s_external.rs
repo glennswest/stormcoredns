@@ -62,7 +62,7 @@ impl External {
         let qtype = req.qtype();
         let name = req.qname();
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
 
         if dnsutil::is_reverse(zone) != 0 {
             let ip = dnsutil::extract_address_from_reverse(&qname)?;
@@ -72,7 +72,7 @@ impl External {
             if matches!(qtype, RecordType::PTR | RecordType::ANY) {
                 m.add_answer(Record::from_rdata(name, self.ttl, RData::PTR(PTR(target))));
             } else {
-                m.add_name_server(self.soa(zone));
+                m.add_authority(self.soa(zone));
             }
             return Some(m);
         }
@@ -82,7 +82,7 @@ impl External {
             match qtype {
                 RecordType::SOA | RecordType::ANY => m.add_answer(self.soa(zone)),
                 RecordType::NS => m.add_answer(Record::from_rdata(name.clone(), self.ttl, RData::NS(NS(Name::from_ascii(dnsutil::join(&["ns1", &self.apex], zone)).ok()?)))),
-                _ => m.add_name_server(self.soa(zone)),
+                _ => m.add_authority(self.soa(zone)),
             };
             return Some(m);
         }
@@ -92,7 +92,7 @@ impl External {
         if segs[0] == self.apex {
             match segs.len() {
                 1 => {
-                    m.add_name_server(self.soa(zone));
+                    m.add_authority(self.soa(zone));
                     return Some(m);
                 }
                 2 if segs[1] == "ns1" => {
@@ -100,8 +100,8 @@ impl External {
                     for r in self.addrs(&name, &ips, qtype) {
                         m.add_answer(r);
                     }
-                    if m.answers().is_empty() {
-                        m.add_name_server(self.soa(zone));
+                    if m.answers.is_empty() {
+                        m.add_authority(self.soa(zone));
                     }
                     return Some(m);
                 }
@@ -112,7 +112,7 @@ impl External {
             [ns] => {
                 // namespace only: NODATA if any service exists there
                 let _ = ns;
-                m.add_name_server(self.soa(zone));
+                m.add_authority(self.soa(zone));
                 return Some(m);
             }
             [ns, svc] => (*ns, *svc, None, None, None),
@@ -133,8 +133,8 @@ impl External {
             for r in self.addrs(&name, ips, qtype) {
                 m.add_answer(r);
             }
-            if m.answers().is_empty() {
-                m.add_name_server(self.soa(zone));
+            if m.answers.is_empty() {
+                m.add_authority(self.soa(zone));
             }
             return Some(m);
         }
@@ -169,7 +169,7 @@ impl External {
                 if !ext.ports.iter().any(|(pname, _, _)| p == "*" || pname.eq_ignore_ascii_case(p)) {
                     return None;
                 }
-                m.add_name_server(self.soa(zone));
+                m.add_authority(self.soa(zone));
             }
             (None, RecordType::SRV) => {
                 for (_, _, pport) in &ext.ports {
@@ -194,10 +194,10 @@ impl External {
                             // resolve the hostname through the server, as CoreDNS's upstream does
                             if matches!(qtype, RecordType::A | RecordType::AAAA) {
                                 if let Ok(up) = crate::server::self_lookup(req, t, qtype).await {
-                                    if up.truncated() {
-                                        m.set_truncated(true);
+                                    if up.metadata.truncation {
+                                        m.metadata.truncation = true;
                                     }
-                                    for r in up.answers() {
+                                    for r in up.answers {
                                         m.add_answer(r.clone());
                                     }
                                 }
@@ -205,12 +205,12 @@ impl External {
                         }
                     }
                 }
-                if m.answers().is_empty() {
-                    m.add_name_server(self.soa(zone));
+                if m.answers.is_empty() {
+                    m.add_authority(self.soa(zone));
                 }
             }
             _ => {
-                m.add_name_server(self.soa(zone));
+                m.add_authority(self.soa(zone));
             }
         }
         Some(m)
@@ -237,9 +237,9 @@ impl Handler for External {
                     }
                 }
                 let mut m = req.new_reply();
-                m.set_authoritative(true);
-                m.set_response_code(ResponseCode::NXDomain);
-                m.add_name_server(self.soa(&zone));
+                m.metadata.authoritative = true;
+                m.metadata.response_code = ResponseCode::NXDomain;
+                m.add_authority(self.soa(&zone));
                 Ok(Reply::Msg(m))
             }
         }
@@ -336,18 +336,18 @@ mod tests {
     async fn headless_endpoint_names() {
         let e = ext();
         let m = q(&e, "db.prod.example.com.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 2);
+        assert_eq!(m.answers.len(), 2);
         let m = q(&e, "pg-1.db.prod.example.com.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
-        assert!(matches!(m.answers()[0].data(), Some(RData::A(a)) if a.0.octets() == [10, 0, 0, 2]));
+        assert_eq!(m.answers.len(), 1);
+        assert!(matches!(m.answers[0].data(), Some(RData::A(a)) if a.0.octets() == [10, 0, 0, 2]));
         let m = q(&e, "pg-9.db.prod.example.com.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&e, "_pg._tcp.db.prod.example.com.", RecordType::SRV).await;
-        let targets: Vec<String> = m.answers().iter().filter_map(|r| match r.data() {
+        let targets: Vec<String> = m.answers.iter().filter_map(|r| match r.data() {
             Some(RData::SRV(s)) => Some(s.target().to_ascii()),
             _ => None,
         }).collect();
         assert_eq!(targets, vec!["pg-0.db.prod.example.com.", "pg-1.db.prod.example.com."]);
-        assert_eq!(m.additionals().len(), 2);
+        assert_eq!(m.additionals.len(), 2);
     }
 }

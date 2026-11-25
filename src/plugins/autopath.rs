@@ -100,23 +100,23 @@ impl Handler for Autopath {
             let mut r2 = req.new_with_question(cname.clone(), qtype);
             let reply = next.serve(&mut r2).await;
             match reply {
-                Ok(Reply::Msg(m)) if m.response_code() == ResponseCode::NoError => {
+                Ok(Reply::Msg(m)) if m.metadata.response_code == ResponseCode::NoError => {
                     if candidate == qname {
                         return Ok(Reply::Msg(m));
                     }
                     SUCCESS.with_label_values(&[&req.server]).inc();
                     let mut out = req.new_reply();
-                    out.set_authoritative(m.authoritative());
-                    out.set_recursion_available(m.recursion_available());
-                    let ttl = m.answers().iter().map(|r| r.ttl()).min().unwrap_or(0);
+                    out.metadata.authoritative = m.metadata.authoritative;
+                    out.metadata.recursion_available = m.metadata.recursion_available;
+                    let ttl = m.answers.iter().map(|r| r.ttl()).min().unwrap_or(0);
                     out.add_answer(Record::from_rdata(orig.clone(), ttl, RData::CNAME(CNAME(cname))));
-                    for r in m.answers() {
+                    for r in &m.answers {
                         out.add_answer(r.clone());
                     }
-                    for r in m.name_servers() {
-                        out.add_name_server(r.clone());
+                    for r in &m.authorities {
+                        out.add_authority(r.clone());
                     }
-                    for r in m.additionals() {
+                    for r in &m.additionals {
                         if r.record_type() != hickory_proto::rr::RecordType::OPT {
                             out.add_additional(r.clone());
                         }
@@ -133,7 +133,7 @@ impl Handler for Autopath {
         }
         match first_reply {
             Some(Reply::Msg(mut m)) => {
-                m.set_id(req.msg.id());
+                m.metadata.id = req.msg.metadata.id;
                 Ok(Reply::Msg(m))
             }
             Some(r) => Ok(r),

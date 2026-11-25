@@ -296,11 +296,11 @@ impl Zone {
         let qname = req.name_uncached();
         let qtype = req.qtype();
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
 
         // referral
         if let Some((dname, nd)) = self.delegation(&qname, qtype) {
-            m.set_authoritative(false);
+            m.metadata.authoritative = false;
             let mut ns = Vec::new();
             self.with_sigs(nd, RecordType::NS, false, &mut ns);
             if do_bit {
@@ -313,7 +313,7 @@ impl Zone {
             let mut extra = Vec::new();
             self.additional(&ns, do_bit, &mut extra);
             for r in ns {
-                m.add_name_server(r);
+                m.add_authority(r);
             }
             for r in extra {
                 m.add_additional(r);
@@ -345,7 +345,7 @@ impl Zone {
                 // a name over 255 octets on the wire cannot be synthesized
                 let synth = if new.len() + 1 > 255 { None } else { Name::from_ascii(&new).ok() };
                 let Some(new_name) = synth else {
-                    m.set_response_code(ResponseCode::YXDomain);
+                    m.metadata.response_code = ResponseCode::YXDomain;
                     for r in answers {
                         m.add_answer(r);
                     }
@@ -400,7 +400,7 @@ impl Zone {
                     if found.is_empty() && answers.is_empty() {
                         // NODATA
                         for r in self.negative_soa(do_bit) {
-                            m.add_name_server(r);
+                            m.add_authority(r);
                         }
                         if do_bit {
                             let mut proof = Vec::new();
@@ -425,7 +425,7 @@ impl Zone {
                 Some(t) if chase_external => {
                     if let Ok(tn) = Name::from_ascii(&t) {
                         if let Ok(r) = crate::server::self_lookup(req, tn, qtype).await {
-                            answers.extend(r.answers().iter().cloned());
+                            answers.extend(r.answers.iter().cloned());
                         }
                     }
                     break;
@@ -480,13 +480,13 @@ impl Zone {
     /// NXDOMAIN, or NODATA for an empty non-terminal.
     fn negative(&self, req: &Request, name: &str, do_bit: bool) -> Message {
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         let ent = self.nodes.contains(name);
         if !ent {
-            m.set_response_code(ResponseCode::NXDomain);
+            m.metadata.response_code = ResponseCode::NXDomain;
         }
         for r in self.negative_soa(do_bit) {
-            m.add_name_server(r);
+            m.add_authority(r);
         }
         if do_bit {
             let mut proof = Vec::new();
@@ -612,7 +612,7 @@ fn add_authority(m: &mut Message, records: Vec<Record>) {
     let mut seen = HashSet::new();
     for r in records {
         if seen.insert(format!("{}", r)) {
-            m.add_name_server(r);
+            m.add_authority(r);
         }
     }
 }
@@ -840,47 +840,47 @@ mail    IN MX   10 www
     async fn exact_and_nodata() {
         let z = zone();
         let m = q(&z, "www.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
-        assert!(m.authoritative());
+        assert_eq!(m.answers.len(), 1);
+        assert!(m.metadata.authoritative);
         let m = q(&z, "www.example.org.", RecordType::MX).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert!(m.answers().is_empty());
-        assert_eq!(m.name_servers()[0].record_type(), RecordType::SOA);
-        assert_eq!(m.name_servers()[0].ttl(), 300, "SOA ttl clamped to minimum");
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert!(m.answers.is_empty());
+        assert_eq!(m.authorities[0].record_type(), RecordType::SOA);
+        assert_eq!(m.authorities[0].ttl(), 300, "SOA ttl clamped to minimum");
     }
 
     #[tokio::test]
     async fn cname_chain() {
         let z = zone();
         let m = q(&z, "alias.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 2);
-        assert_eq!(m.answers()[0].record_type(), RecordType::CNAME);
-        assert_eq!(m.answers()[1].record_type(), RecordType::A);
+        assert_eq!(m.answers.len(), 2);
+        assert_eq!(m.answers[0].record_type(), RecordType::CNAME);
+        assert_eq!(m.answers[1].record_type(), RecordType::A);
         let m = q(&z, "ext.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1, "external target not chased without upstream");
+        assert_eq!(m.answers.len(), 1, "external target not chased without upstream");
     }
 
     #[tokio::test]
     async fn wildcard_and_ent() {
         let z = zone();
         let m = q(&z, "foo.wild.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].name().to_ascii(), "foo.wild.example.org.");
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].name().to_ascii(), "foo.wild.example.org.");
         let m = q(&z, "b.c.example.org.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError, "empty non-terminal is NODATA");
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError, "empty non-terminal is NODATA");
         let m = q(&z, "nope.example.org.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
     }
 
     #[tokio::test]
     async fn delegation_with_glue() {
         let z = zone();
         let m = q(&z, "host.sub.example.org.", RecordType::A).await;
-        assert!(!m.authoritative());
-        assert_eq!(m.name_servers()[0].record_type(), RecordType::NS);
-        assert_eq!(m.additionals().len(), 1);
+        assert!(!m.metadata.authoritative);
+        assert_eq!(m.authorities[0].record_type(), RecordType::NS);
+        assert_eq!(m.additionals.len(), 1);
         let m = q(&z, "mail.example.org.", RecordType::MX).await;
-        assert_eq!(m.additionals().len(), 2, "MX glue A+AAAA");
+        assert_eq!(m.additionals.len(), 2, "MX glue A+AAAA");
     }
 
     #[test]
@@ -910,24 +910,24 @@ a.b.c   IN TXT  "deep"
         let z = Zone::parse(WILD, "example.org.", None).unwrap();
         // closest encloser of x.b.c is the empty non-terminal b.c; there is no *.b.c
         let m = q(&z, "x.b.c.example.org.", RecordType::TXT).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
-        assert!(m.answers().is_empty());
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
+        assert!(m.answers.is_empty());
         let m = q(&z, "b.c.example.org.", RecordType::TXT).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert!(m.answers().is_empty(), "empty non-terminal is NODATA, not the wildcard");
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert!(m.answers.is_empty(), "empty non-terminal is NODATA, not the wildcard");
         // the apex wildcard covers names whose closest encloser is the apex
         let m = q(&z, "other.example.org.", RecordType::TXT).await;
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].name().to_ascii(), "other.example.org.");
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].name().to_ascii(), "other.example.org.");
         let m = q(&z, "y.x.example.org.", RecordType::TXT).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         // *.wild covers more than one label below wild
         let m = q(&z, "deep.foo.wild.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].name().to_ascii(), "deep.foo.wild.example.org.");
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].name().to_ascii(), "deep.foo.wild.example.org.");
         // the closest encloser c.example.org exists, so *.example.org does not apply below it
         let m = q(&z, "z.c.example.org.", RecordType::TXT).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
     }
 
     // ------------------------------------------------------ #13: DNAME
@@ -963,8 +963,8 @@ dname   IN A    192.0.2.8
     async fn dname_substitution() {
         let z = dname_zone();
         let m = q(&z, "www.legacy.example.org.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        let a = m.answers();
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        let a = &m.answers;
         assert_eq!(a.len(), 3, "{:?}", a);
         assert_eq!(a[0].record_type(), DNAME);
         assert_eq!(a[0].name().to_ascii(), "legacy.example.org.");
@@ -979,22 +979,22 @@ dname   IN A    192.0.2.8
         assert_eq!(a[2].record_type(), RecordType::A);
         // out-of-zone target: DNAME + CNAME, not chased without the server
         let m = q(&z, "a.b.ext.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 2);
-        match m.answers()[1].data() {
+        assert_eq!(m.answers.len(), 2);
+        match m.answers[1].data() {
             Some(RData::CNAME(c)) => assert_eq!(c.0.to_ascii(), "a.b.example.net."),
             o => panic!("{:?}", o),
         }
         // the owner itself is not redirected
         let m = q(&z, "legacy.example.org.", DNAME).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let m = q(&z, "legacy.example.org.", RecordType::A).await;
-        assert!(m.answers().is_empty());
-        assert_eq!(m.response_code(), ResponseCode::NoError);
+        assert!(m.answers.is_empty());
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
         let m = q(&z, "legacy.example.org.", RecordType::TXT).await;
-        assert_eq!(m.answers().len(), 1, "TXT \"DNAME\" kept as TXT");
+        assert_eq!(m.answers.len(), 1, "TXT \"DNAME\" kept as TXT");
         // an owner called "dname" is not a type
         let m = q(&z, "dname.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
     }
 
     #[tokio::test]
@@ -1002,9 +1002,9 @@ dname   IN A    192.0.2.8
         let z = dname_zone();
         let name = format!("{}.long.example.org.", long_label('x'));
         let m = q(&z, &name, RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::YXDomain);
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].record_type(), DNAME);
+        assert_eq!(m.metadata.response_code, ResponseCode::YXDomain);
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].record_type(), DNAME);
     }
 
     #[test]
@@ -1014,14 +1014,14 @@ dname   IN A    192.0.2.8
         let d: Vec<_> = all.iter().filter(|r| r.record_type() == DNAME).collect();
         assert_eq!(d.len(), 3);
         // round trip through the wire as an unknown type (what secondary sees)
-        let mut m = Message::new();
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
         for r in &d {
             m.add_answer((*r).clone());
         }
         let back = Message::from_vec(&m.to_vec().unwrap()).unwrap();
         let z2 = Zone::from_records("example.org.", z.all_records()).unwrap();
         assert_eq!(z2.all_records().iter().filter(|r| r.record_type() == DNAME).count(), 3);
-        for r in back.answers() {
+        for r in &back.answers {
             assert_eq!(r.record_type(), DNAME);
             assert!(dname_target(r).is_some());
         }
@@ -1097,12 +1097,12 @@ dname   IN A    192.0.2.8
 
     async fn q_do(z: &Zone, name: &str, t: RecordType) -> Message {
         let mut req = Request::for_test(name, t);
-        req.msg.extensions_mut().get_or_insert_with(hickory_proto::op::Edns::new).set_dnssec_ok(true);
+        req.msg.edns.get_or_insert_with(hickory_proto::op::Edns::new).set_dnssec_ok(true);
         z.lookup(&req, false).await
     }
 
     fn nsec3_owners(m: &Message) -> Vec<String> {
-        m.name_servers().iter().filter(|r| r.record_type() == RecordType::NSEC3).map(|r| dnsutil::name_str(r.name())).collect()
+        m.authorities.iter().filter(|r| r.record_type() == RecordType::NSEC3).map(|r| dnsutil::name_str(r.name())).collect()
     }
 
     fn hash_owner(name: &str) -> String {
@@ -1134,7 +1134,7 @@ dname   IN A    192.0.2.8
         let z = nsec3_zone();
         assert_eq!(z.nsec3.as_ref().unwrap().chain.len(), 6);
         let m = q_do(&z, "nope.example.org.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let owners = nsec3_owners(&m);
         // closest encloser (apex) matched, next closer and *.apex covered
         assert!(owners.contains(&hash_owner("example.org.")), "{:?}", owners);
@@ -1142,7 +1142,7 @@ dname   IN A    192.0.2.8
         assert!(owners.iter().any(|o| covers(&z, o, "*.example.org.")));
         // below the ENT: closest encloser b, next closer x.b
         let m = q_do(&z, "y.x.b.example.org.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let owners = nsec3_owners(&m);
         assert!(owners.contains(&hash_owner("b.example.org.")));
         assert!(owners.iter().any(|o| covers(&z, o, "x.b.example.org.")));
@@ -1153,20 +1153,20 @@ dname   IN A    192.0.2.8
     async fn nsec3_nodata_and_wildcard_proofs() {
         let z = nsec3_zone();
         let m = q_do(&z, "www.example.org.", RecordType::TXT).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
         assert_eq!(nsec3_owners(&m), vec![hash_owner("www.example.org.")]);
         // empty non-terminal
         let m = q_do(&z, "b.example.org.", RecordType::A).await;
         assert_eq!(nsec3_owners(&m), vec![hash_owner("b.example.org.")]);
         // wildcard answer: next closer covered
         let m = q_do(&z, "x.w.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let owners = nsec3_owners(&m);
         assert_eq!(owners.len(), 1);
         assert!(covers(&z, &owners[0], "x.w.example.org."));
         // wildcard NODATA: closest encloser + wildcard matched, next closer covered
         let m = q_do(&z, "x.w.example.org.", RecordType::TXT).await;
-        assert!(m.answers().is_empty());
+        assert!(m.answers.is_empty());
         let owners = nsec3_owners(&m);
         assert!(owners.contains(&hash_owner("w.example.org.")));
         assert!(owners.contains(&hash_owner("*.w.example.org.")));

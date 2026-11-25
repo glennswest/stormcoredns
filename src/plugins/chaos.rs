@@ -31,7 +31,7 @@ impl Handler for Chaos {
             _ => return next.serve(req).await,
         };
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         for t in texts {
             let mut r = Record::from_rdata(req.qname(), 0, RData::TXT(TXT::new(vec![t])));
             r.set_dns_class(DNSClass::CH);

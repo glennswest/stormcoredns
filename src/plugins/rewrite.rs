@@ -173,7 +173,7 @@ fn expand_var(var: &str, req: &Request) -> String {
 }
 
 fn apply_edns0(req: &mut Request, action: Edns0Action, code: u16, data: Vec<u8>) {
-    let e = req.msg.extensions_mut().get_or_insert_with(|| {
+    let e = req.msg.edns.get_or_insert_with(|| {
         let mut e = Edns::new();
         e.set_max_payload(dnsutil::UDP_BUFFER_SIZE);
         e
@@ -210,7 +210,7 @@ impl Rewrite {
                                 if undo.orig_name.is_none() {
                                     undo.orig_name = Some(req.qname());
                                 }
-                                let mut q = req.msg.take_queries();
+                                let mut q = std::mem::take(&mut req.msg.queries);
                                 if let Some(first) = q.first_mut() {
                                     first.set_name(n);
                                 }
@@ -234,7 +234,7 @@ impl Rewrite {
                         if undo.orig_type.is_none() {
                             undo.orig_type = Some(*from);
                         }
-                        let mut q = req.msg.take_queries();
+                        let mut q = std::mem::take(&mut req.msg.queries);
                         if let Some(first) = q.first_mut() {
                             first.set_query_type(*to);
                         }
@@ -251,7 +251,7 @@ impl Rewrite {
                         if undo.orig_class.is_none() {
                             undo.orig_class = Some(*from);
                         }
-                        let mut q = req.msg.take_queries();
+                        let mut q = std::mem::take(&mut req.msg.queries);
                         if let Some(first) = q.first_mut() {
                             first.set_query_class(*to);
                         }
@@ -307,7 +307,7 @@ impl Rewrite {
                             (IpAddr::V6(std::net::Ipv6Addr::from(u128::from(a) & mask)), *v6)
                         }
                     };
-                    let e = req.msg.extensions_mut().get_or_insert_with(|| {
+                    let e = req.msg.edns.get_or_insert_with(|| {
                         let mut e = Edns::new();
                         e.set_max_payload(dnsutil::UDP_BUFFER_SIZE);
                         e
@@ -334,7 +334,7 @@ impl Rewrite {
     async fn apply_response(&self, req: &Request, undo: &Undo, m: &mut Message) {
         // restore the question
         let orig_name = undo.orig_name.clone();
-        let mut q = m.take_queries();
+        let mut q = std::mem::take(&mut m.queries);
         if let Some(first) = q.first_mut() {
             if let Some(n) = &orig_name {
                 first.set_name(n.clone());
@@ -352,7 +352,7 @@ impl Rewrite {
         // answer name rewriting
         if !undo.answer_rules.is_empty() {
             let new_qname = req.name_uncached();
-            let mut answers = m.take_answers();
+            let mut answers = std::mem::take(&mut m.answers);
             for (rule, matcher, to) in &undo.answer_rules {
                 for r in answers.iter_mut() {
                     let rname = dnsutil::name_str(r.name());
@@ -402,7 +402,7 @@ impl Rewrite {
         }
         // ttl
         for (matcher, min, max) in &undo.ttl {
-            let mut answers = m.take_answers();
+            let mut answers = std::mem::take(&mut m.answers);
             for r in answers.iter_mut() {
                 if matcher.matches(&dnsutil::name_str(r.name())) {
                     let t = r.ttl().clamp(*min, *max);
@@ -413,13 +413,13 @@ impl Rewrite {
         }
         // rcode
         for (_, from, to) in &undo.rcode {
-            if m.response_code() == *from {
-                m.set_response_code(*to);
+            if m.metadata.response_code == *from {
+                m.metadata.response_code = *to;
             }
         }
         // cname target rewrite + re-resolution
         for (matcher, to) in &undo.cname {
-            let mut answers = m.take_answers();
+            let mut answers = std::mem::take(&mut m.answers);
             let mut chased: Vec<Record> = Vec::new();
             let mut changed = false;
             for r in answers.iter_mut() {
@@ -430,7 +430,7 @@ impl Rewrite {
                             *r = Record::from_rdata(r.name().clone(), r.ttl(), RData::CNAME(CNAME(nn.clone())));
                             changed = true;
                             if let Ok(res) = crate::server::self_lookup(req, nn, req.qtype()).await {
-                                chased.extend(res.answers().iter().cloned());
+                                chased.extend(res.answers.iter().cloned());
                             }
                         }
                     }
@@ -461,7 +461,7 @@ impl Handler for Rewrite {
         // hand the request back with its original question so later
         // observers (log, metrics) see what the client asked
         if let Some(n) = undo.orig_name {
-            let mut q = req.msg.take_queries();
+            let mut q = std::mem::take(&mut req.msg.queries);
             if let Some(first) = q.first_mut() {
                 first.set_name(n);
             }
@@ -682,8 +682,8 @@ mod tests {
         let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(rw), Arc::new(Echo)];
         let mut req = Request::for_test("www.old.example.", RecordType::A);
         let m = Next::new(&chain).serve(&mut req).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.queries()[0].name().to_ascii(), "www.old.example.");
-        assert_eq!(m.answers()[0].name().to_ascii(), "www.old.example.");
+        assert_eq!(m.queries[0].name().to_ascii(), "www.old.example.");
+        assert_eq!(m.answers[0].name().to_ascii(), "www.old.example.");
         assert_eq!(req.name(), "www.old.example.");
     }
 

@@ -18,11 +18,11 @@ impl Handler for Minimal {
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
         let mut r = next.serve(req).await?;
         if let Some(m) = r.msg_mut() {
-            let positive = m.response_code() == ResponseCode::NoError && !m.answers().is_empty();
+            let positive = m.metadata.response_code == ResponseCode::NoError && !m.answers.is_empty();
             // delegations (NS in authority, no answers) must keep their glue
             if positive {
-                m.take_name_servers();
-                let extra = m.take_additionals();
+                m.authorities.clear();
+                let extra = std::mem::take(&mut m.additionals);
                 m.insert_additionals(extra.into_iter().filter(|r| r.record_type() == RecordType::OPT).collect());
             }
         }

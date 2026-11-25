@@ -60,7 +60,7 @@ impl Handler for Local {
             match qtype {
                 RecordType::A => m.add_answer(a(&qname)),
                 RecordType::AAAA => m.add_answer(aaaa(&qname)),
-                _ => m.add_name_server(soa(&qname)),
+                _ => m.add_authority(soa(&qname)),
             };
             return Ok(Reply::Msg(m));
         }
@@ -85,7 +85,7 @@ impl Handler for Local {
                     m.add_answer(Record::from_rdata(qname.clone(), TTL, RData::NS(NS(n("localhost.")))));
                 }
                 _ => {
-                    m.add_name_server(soa(&qname));
+                    m.add_authority(soa(&qname));
                 }
             },
             "1.0.0.127.in-addr.arpa." => match qtype {
@@ -93,12 +93,12 @@ impl Handler for Local {
                     m.add_answer(Record::from_rdata(qname.clone(), TTL, RData::PTR(PTR(n("localhost.")))));
                 }
                 _ => {
-                    m.add_name_server(soa(&zone_name));
+                    m.add_authority(soa(&zone_name));
                 }
             },
             _ => {}
         }
-        if m.answers().is_empty() && m.name_servers().is_empty() {
+        if m.answers.is_empty() && m.authorities.is_empty() {
             nxdomain(&mut m, &zone_name);
         }
         Ok(Reply::Msg(m))
@@ -106,8 +106,8 @@ impl Handler for Local {
 }
 
 fn nxdomain(m: &mut Message, zone: &Name) {
-    m.add_name_server(soa(zone));
-    m.set_response_code(ResponseCode::NXDomain);
+    m.add_authority(soa(zone));
+    m.metadata.response_code = ResponseCode::NXDomain;
 }
 
 pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
@@ -137,20 +137,20 @@ mod tests {
     #[tokio::test]
     async fn matches_coredns() {
         let m = q("localhost.", RecordType::A).await.unwrap();
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let m = q("localhost.cluster.local.", RecordType::AAAA).await.unwrap();
-        assert_eq!(m.answers()[0].record_type(), RecordType::AAAA);
+        assert_eq!(m.answers[0].record_type(), RecordType::AAAA);
         let m = q("1.0.0.127.in-addr.arpa.", RecordType::PTR).await.unwrap();
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let m = q("5.0.0.127.in-addr.arpa.", RecordType::PTR).await.unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
-        assert_eq!(m.name_servers()[0].name().to_ascii(), "127.in-addr.arpa.");
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
+        assert_eq!(m.authorities[0].name().to_ascii(), "127.in-addr.arpa.");
         let m = q("0.in-addr.arpa.", RecordType::NS).await.unwrap();
-        assert_eq!(m.answers()[0].record_type(), RecordType::NS);
+        assert_eq!(m.answers[0].record_type(), RecordType::NS);
         let m = q("1.255.in-addr.arpa.", RecordType::PTR).await.unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q("foo.localhost.", RecordType::A).await.unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         // not ours
         assert!(q("example.org.", RecordType::A).await.is_err());
         assert!(q("ip6-localhost.", RecordType::AAAA).await.is_err(), "CoreDNS does not answer ip6-localhost");

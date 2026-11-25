@@ -47,7 +47,7 @@ impl Handler for File {
         let Some(fz) = self.find(&qname) else {
             return next.serve(req).await;
         };
-        if req.msg.op_code() == OpCode::Notify {
+        if req.msg.metadata.op_code == OpCode::Notify {
             // we are primary for this zone; acknowledge and ignore
             let m = req.new_reply();
             return Ok(Reply::Msg(m));

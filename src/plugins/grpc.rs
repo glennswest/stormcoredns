@@ -73,7 +73,7 @@ impl Proxy {
             Err(_) => return Err(anyhow!("{}: timeout", self.addr)),
         };
         let m = Message::from_bytes(&resp)?;
-        let rc = crate::plugin::replacer::rcode_str(m.response_code());
+        let rc = crate::plugin::replacer::rcode_str(m.metadata.response_code);
         RCODE_COUNT.with_label_values(&[&rc, &self.addr]).inc();
         REQUEST_DURATION.with_label_values(&[&self.addr, &rc]).observe(start.elapsed().as_secs_f64());
         Ok(m)
@@ -131,7 +131,7 @@ impl Handler for Grpc {
                         last = Some(anyhow!("{}: mismatched response", p.addr));
                         continue;
                     }
-                    m.set_id(req.msg.id());
+                    m.metadata.id = req.msg.metadata.id;
                     return Ok(Reply::Msg(m));
                 }
                 Err(e) => {

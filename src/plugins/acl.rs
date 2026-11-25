@@ -96,7 +96,7 @@ impl Handler for Acl {
                 Some(Action::Block) => {
                     BLOCK_COUNT.with_label_values(&[&req.server, &zone, &req.view]).inc();
                     let mut m = req.new_reply();
-                    m.set_response_code(ResponseCode::Refused);
+                    m.metadata.response_code = ResponseCode::Refused;
                     add_ede(&mut m, EDE_BLOCKED);
                     return Ok(Reply::Msg(m));
                 }
@@ -124,7 +124,7 @@ const EDNS_EDE: u16 = 15;
 
 /// Add an EDE option, with EDNS0 (4096, DO) as CoreDNS sets it.
 fn add_ede(m: &mut Message, code: u16) {
-    let mut e = m.extensions().clone().unwrap_or_else(Edns::new);
+    let mut e = m.edns.clone().unwrap_or_else(Edns::new);
     e.set_max_payload(4096);
     e.set_dnssec_ok(true);
     e.options_mut().insert(EdnsOption::Unknown(EDNS_EDE, code.to_be_bytes().to_vec()));
@@ -237,8 +237,8 @@ mod tests {
         req.remote = "192.0.2.1:5".parse().unwrap();
         let r = acl.serve_dns(&mut req, Next::new(&[])).await.unwrap();
         let m = r.msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        let e = m.extensions().as_ref().unwrap();
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        let e = m.edns.as_ref().unwrap();
         let ede = e.options().get(hickory_proto::rr::rdata::opt::EdnsCode::from(15)).unwrap();
         assert_eq!(ede, &EdnsOption::Unknown(15, vec![0, 17]));
     }

@@ -16,7 +16,7 @@ impl Handler for Bufsize {
     }
 
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
-        if let Some(e) = req.msg.extensions_mut().as_mut() {
+        if let Some(e) = req.msg.edns.as_mut() {
             if e.max_payload() > self.size {
                 e.set_max_payload(self.size);
             }

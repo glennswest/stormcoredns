@@ -73,7 +73,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     rep.check("nodata", async {
         // The name exists, the type does not: NOERROR, no answers, an SOA.
         match dns::query_udp_retry(server, &web, RecordType::MX, T).await {
-            Ok(m) if dns::rcode(&m) == ResponseCode::NoError && m.answers().is_empty() && dns::has_type(m.name_servers(), RecordType::SOA) => pass(format!("{web} MX: NODATA with SOA")),
+            Ok(m) if dns::rcode(&m) == ResponseCode::NoError && m.answers.is_empty() && dns::has_type(&m.authorities, RecordType::SOA) => pass(format!("{web} MX: NODATA with SOA")),
             Ok(m) => fail(format!("{web} MX: {} (want NOERROR, no answer, SOA)", dns::show(&m))),
             Err(e) => fail(format!("{web} MX: {e:#}")),
         }
@@ -175,7 +175,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     rep.check("apex-ns", async {
         let q = format!("{}.", env.domain);
         match dns::query_udp_retry(server, &q, RecordType::NS, T).await {
-            Ok(m) if dns::has_type(m.answers(), RecordType::NS) => pass(format!("{q} NS: {}", dns::show(&m))),
+            Ok(m) if dns::has_type(&m.answers, RecordType::NS) => pass(format!("{q} NS: {}", dns::show(&m))),
             Ok(m) => fail(format!("{q} NS: {}", dns::show(&m))),
             Err(e) => fail(format!("{q} NS: {e:#}")),
         }
@@ -194,8 +194,8 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
             return fail(format!("{big} never showed its 100 endpoints over TCP within {PROGRAM:?} plus the cached answer's TTL"));
         }
         match dns::query(server, &big, RecordType::A, Proto::Udp, None, T).await {
-            Ok(m) if m.truncated() => pass(format!("{big} over UDP without EDNS: TC with {} of 100 answers", m.answers().len())),
-            Ok(m) => fail(format!("{big} over UDP without EDNS: {} answers and no TC (512-byte limit)", m.answers().len())),
+            Ok(m) if m.metadata.truncation => pass(format!("{big} over UDP without EDNS: TC with {} of 100 answers", m.answers.len())),
+            Ok(m) => fail(format!("{big} over UDP without EDNS: {} answers and no TC (512-byte limit)", m.answers.len())),
             Err(e) => fail(format!("{big}: {e:#}")),
         }
     })
@@ -203,8 +203,8 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
 
     rep.check("tcp-whole", async {
         match dns::query(server, &big, RecordType::A, Proto::Tcp, None, T).await {
-            Ok(m) if dns::addrs(&m) == all && !m.truncated() => pass(format!("{big} over TCP: all 100")),
-            Ok(m) => fail(format!("{big} over TCP: {} answers, TC={}", m.answers().len(), m.truncated())),
+            Ok(m) if dns::addrs(&m) == all && !m.metadata.truncation => pass(format!("{big} over TCP: all 100")),
+            Ok(m) => fail(format!("{big} over TCP: {} answers, TC={}", m.answers.len(), m.metadata.truncation)),
             Err(e) => fail(format!("{big} over TCP: {e:#}")),
         }
     })
@@ -212,8 +212,8 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
 
     rep.check("edns-whole", async {
         match dns::query(server, &big, RecordType::A, Proto::Udp, Some(4096), T).await {
-            Ok(m) if dns::addrs(&m) == all && !m.truncated() => pass(format!("{big} over UDP with EDNS 4096: all 100")),
-            Ok(m) => fail(format!("{big} with EDNS 4096: {} answers, TC={}", m.answers().len(), m.truncated())),
+            Ok(m) if dns::addrs(&m) == all && !m.metadata.truncation => pass(format!("{big} over UDP with EDNS 4096: all 100")),
+            Ok(m) => fail(format!("{big} with EDNS 4096: {} answers, TC={}", m.answers.len(), m.metadata.truncation)),
             Err(e) => fail(format!("{big} with EDNS 4096: {e:#}")),
         }
     })

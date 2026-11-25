@@ -85,7 +85,7 @@ pub fn parse_secrets_file(text: &str) -> Result<Vec<Secret>> {
 }
 
 fn tsig_of(m: &Message) -> Option<(&Record, &TSIG)> {
-    m.signature().iter().chain(m.additionals().iter()).find_map(|r| match r.data() {
+    m.signature().iter().chain(m.additionals.iter()).find_map(|r| match r.data() {
         Some(RData::DNSSEC(DNSSECRData::TSIG(t))) => Some((r, t)),
         _ => None,
     })
@@ -103,9 +103,9 @@ impl Tsig {
     /// Build an unsigned-error response carrying a TSIG with `error`.
     fn tsig_error(&self, req: &Request, keyname: &Name, alg: TsigAlgorithm, error: u16) -> Message {
         let mut m = req.new_reply();
-        m.set_response_code(ResponseCode::NotAuth);
+        m.metadata.response_code = ResponseCode::NotAuth;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let t = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.id(), error, Vec::new());
+        let t = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.metadata.id, error, Vec::new());
         let mut r = Record::from_rdata(keyname.clone(), 0, RData::DNSSEC(DNSSECRData::TSIG(t)));
         r.set_dns_class(DNSClass::ANY);
         m.add_tsig(r);
@@ -117,7 +117,7 @@ impl Tsig {
         let alg = secret.algorithm.clone().unwrap_or(TsigAlgorithm::HmacSha256);
         let signer = TSigner::new(secret.key.clone(), alg.clone(), secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let pre = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.id(), 0, Vec::new());
+        let pre = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.metadata.id, 0, Vec::new());
         let tbs = hickory_proto::rr::dnssec::rdata::tsig::message_tbs(Some(req_mac), m, &pre, &secret.name).map_err(|e| anyhow!("{}", e))?;
         let mac = signer.sign(&tbs).map_err(|e| anyhow!("{}", e))?;
         let t = pre.set_mac(mac);
@@ -143,7 +143,7 @@ impl Handler for Tsig {
         let Some((keyname, alg, keyname_n)) = tsig else {
             if self.required(req.qtype()) {
                 let mut m = req.new_reply();
-                m.set_response_code(ResponseCode::Refused);
+                m.metadata.response_code = ResponseCode::Refused;
                 return Ok(Reply::Msg(m));
             }
             return next.serve(req).await;

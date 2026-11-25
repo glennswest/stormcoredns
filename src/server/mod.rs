@@ -111,10 +111,10 @@ impl Server {
                 // FORMERR with the id if we can read one
                 if buf.len() >= 2 {
                     let id = u16::from_be_bytes([buf[0], buf[1]]);
-                    let mut m = Message::new();
-                    m.set_id(id);
-                    m.set_message_type(hickory_proto::op::MessageType::Response);
-                    m.set_response_code(ResponseCode::FormErr);
+                    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+                    m.metadata.id = id;
+                    m.metadata.message_type = hickory_proto::op::MessageType::Response;
+                    m.metadata.response_code = ResponseCode::FormErr;
                     return m.to_vec().ok().map(|b| vec![b]);
                 }
                 return None;
@@ -154,16 +154,16 @@ impl Server {
 
     async fn serve_request_inner(&self, req: &mut Request) -> Option<Vec<Message>> {
         // RFC 6891: unsupported EDNS version → BADVERS
-        if let Some(e) = req.msg.edns() {
+        if let Some(e) = req.msg.edns.as_ref() {
             if e.version() != 0 {
                 let mut m = dnsutil::error_reply(&req.msg, ResponseCode::BADVERS);
-                if let Some(ne) = m.extensions_mut().as_mut() {
+                if let Some(ne) = m.edns.as_mut() {
                     ne.set_version(0);
                 }
                 return Some(vec![m]);
             }
         }
-        if req.msg.queries().is_empty() {
+        if req.msg.queries.is_empty() {
             return Some(vec![dnsutil::error_reply(&req.msg, ResponseCode::Refused)]);
         }
         let entry = match self.lookup(req) {
@@ -181,10 +181,10 @@ impl Server {
         match result {
             Ok(Ok(Reply::Msg(mut m))) => {
                 // make sure the id and question match the query
-                m.set_id(req.msg.id());
-                m.set_message_type(hickory_proto::op::MessageType::Response);
-                if m.queries().is_empty() {
-                    if let Some(q) = req.msg.queries().first() {
+                m.metadata.id = req.msg.metadata.id;
+                m.metadata.message_type = hickory_proto::op::MessageType::Response;
+                if m.queries.is_empty() {
+                    if let Some(q) = req.msg.queries.first() {
                         m.add_query(q.clone());
                     }
                 }
@@ -194,8 +194,8 @@ impl Server {
                 let v: Vec<Message> = v
                     .into_iter()
                     .map(|mut m| {
-                        m.set_id(req.msg.id());
-                        m.set_message_type(hickory_proto::op::MessageType::Response);
+                        m.metadata.id = req.msg.metadata.id;
+                        m.metadata.message_type = hickory_proto::op::MessageType::Response;
                         m
                     })
                     .collect();

@@ -160,9 +160,9 @@ impl Request {
 
     /// Test helper: a UDP request from 127.0.0.1 for `name`/`qtype`.
     pub fn for_test(name: &str, qtype: RecordType) -> Self {
-        let mut m = Message::new();
-        m.set_id(rand::random());
-        m.set_recursion_desired(true);
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.id = rand::random();
+        m.metadata.recursion_desired = true;
         m.add_query(hickory_proto::op::Query::query(Name::from_ascii(name).unwrap(), qtype));
         Request::new(
             m,
@@ -184,7 +184,7 @@ impl Request {
 
     /// Same as `name()` but does not require `&mut`.
     pub fn name_uncached(&self) -> String {
-        match self.msg.queries().first() {
+        match self.msg.queries.first() {
             Some(q) => {
                 let mut s = q.name().to_ascii().to_lowercase();
                 if !s.ends_with('.') {
@@ -202,15 +202,15 @@ impl Request {
     }
 
     pub fn qname(&self) -> Name {
-        self.msg.queries().first().map(|q| q.name().clone()).unwrap_or_else(Name::root)
+        self.msg.queries.first().map(|q| q.name().clone()).unwrap_or_else(Name::root)
     }
 
     pub fn qtype(&self) -> RecordType {
-        self.msg.queries().first().map(|q| q.query_type()).unwrap_or(RecordType::ZERO)
+        self.msg.queries.first().map(|q| q.query_type()).unwrap_or(RecordType::ZERO)
     }
 
     pub fn qclass(&self) -> DNSClass {
-        self.msg.queries().first().map(|q| q.query_class()).unwrap_or(DNSClass::IN)
+        self.msg.queries.first().map(|q| q.query_class()).unwrap_or(DNSClass::IN)
     }
 
     pub fn ip(&self) -> IpAddr {
@@ -238,11 +238,11 @@ impl Request {
     }
 
     pub fn do_bit(&self) -> bool {
-        self.msg.edns().map(|e| e.dnssec_ok()).unwrap_or(false)
+        self.msg.edns.as_ref().map(|e| e.flags().dnssec_ok).unwrap_or(false)
     }
 
     pub fn has_edns(&self) -> bool {
-        self.msg.edns().is_some()
+        self.msg.edns.is_some()
     }
 
     /// The maximum response size the client can take: the EDNS0 buffer size
@@ -251,7 +251,7 @@ impl Request {
         if self.proto.is_stream() {
             return 65535;
         }
-        match self.msg.edns() {
+        match self.msg.edns.as_ref() {
             Some(e) => {
                 let s = e.max_payload();
                 if s < 512 {
@@ -285,13 +285,13 @@ impl Request {
 
     /// Does `reply` belong to this query (same id and question)?
     pub fn matches(&self, reply: &Message) -> bool {
-        if reply.id() != self.msg.id() {
+        if reply.metadata.id != self.msg.metadata.id {
             return false;
         }
-        if reply.message_type() != MessageType::Response {
+        if reply.metadata.message_type != MessageType::Response {
             return false;
         }
-        match (self.msg.queries().first(), reply.queries().first()) {
+        match (self.msg.queries.first(), reply.queries.first()) {
             (Some(q), Some(r)) => {
                 q.query_type() == r.query_type()
                     && q.query_class() == r.query_class()
@@ -305,14 +305,14 @@ impl Request {
     /// A fresh response message for this query: id, question, opcode and RD
     /// copied, EDNS0 mirrored (`m.SetReply(r)` + `SetEdns0`).
     pub fn new_reply(&self) -> Message {
-        let mut m = Message::new();
-        m.set_id(self.msg.id());
-        m.set_message_type(MessageType::Response);
-        m.set_op_code(self.msg.op_code());
-        m.set_recursion_desired(self.msg.recursion_desired());
-        m.set_checking_disabled(self.msg.checking_disabled());
-        m.set_response_code(ResponseCode::NoError);
-        if let Some(q) = self.msg.queries().first() {
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.id = self.msg.metadata.id;
+        m.metadata.message_type = MessageType::Response;
+        m.metadata.op_code = self.msg.metadata.op_code;
+        m.metadata.recursion_desired = self.msg.metadata.recursion_desired;
+        m.metadata.checking_disabled = self.msg.metadata.checking_disabled;
+        m.metadata.response_code = ResponseCode::NoError;
+        if let Some(q) = self.msg.queries.first() {
             m.add_query(q.clone());
         }
         self.set_edns0(&mut m);
@@ -322,10 +322,10 @@ impl Request {
     /// Mirror the query's EDNS0 OPT into a response (`request.Request.SetEdns0`
     /// style): the response carries an OPT of our size, with DO copied.
     pub fn set_edns0(&self, m: &mut Message) {
-        if let Some(q) = self.msg.edns() {
+        if let Some(q) = self.msg.edns.as_ref() {
             let mut e = Edns::new();
             e.set_max_payload(crate::dnsutil::UDP_BUFFER_SIZE);
-            e.set_dnssec_ok(q.dnssec_ok());
+            e.set_dnssec_ok(q.flags().dnssec_ok);
             e.set_version(0);
             m.set_edns(e);
         }
@@ -334,12 +334,12 @@ impl Request {
     /// Make an error response with the given rcode (`request.Request.ErrorResponse`).
     pub fn error_response(&self, rcode: ResponseCode) -> Message {
         let mut m = self.new_reply();
-        m.set_response_code(rcode);
+        m.metadata.response_code = rcode;
         m
     }
 
     pub fn op_code(&self) -> OpCode {
-        self.msg.op_code()
+        self.msg.metadata.op_code
     }
 
     /// Returns true if the deadline set by `cancel` has passed.
@@ -368,14 +368,14 @@ impl Request {
     /// transport context (used by plugins that look up other names, e.g.
     /// `kubernetes` for CNAME targets, `autopath`).
     pub fn new_with_question(&self, name: Name, qtype: RecordType) -> Request {
-        let mut m = Message::new();
-        m.set_id(rand::random());
-        m.set_recursion_desired(true);
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.id = rand::random();
+        m.metadata.recursion_desired = true;
         m.add_query(hickory_proto::op::Query::query(name, qtype));
-        if let Some(e) = self.msg.edns() {
+        if let Some(e) = self.msg.edns.as_ref() {
             let mut ne = Edns::new();
             ne.set_max_payload(e.max_payload());
-            ne.set_dnssec_ok(e.dnssec_ok());
+            ne.set_dnssec_ok(e.flags().dnssec_ok);
             m.set_edns(ne);
         }
         let mut r = Request::new(m, self.remote, self.local, self.proto);

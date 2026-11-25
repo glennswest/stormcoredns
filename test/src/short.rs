@@ -20,7 +20,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     rep.check("apex-soa", async {
         let m = dns::query_udp_retry(server, &apex, RecordType::SOA, Duration::from_secs(2)).await;
         match m {
-            Ok(m) if dns::rcode(&m) == ResponseCode::NoError && dns::has_type(m.answers(), RecordType::SOA) => pass(format!("{server} answers SOA for {apex}")),
+            Ok(m) if dns::rcode(&m) == ResponseCode::NoError && dns::has_type(&m.answers, RecordType::SOA) => pass(format!("{server} answers SOA for {apex}")),
             Ok(m) => fail(format!("SOA {apex} from {server}: {}", dns::show(&m))),
             Err(e) => fail(format!("{server} did not answer: {e:#}")),
         }
@@ -63,7 +63,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     rep.check("nxdomain", async {
         let q = env.svc("sc-absent");
         match dns::query_udp_retry(server, &q, RecordType::A, Duration::from_secs(2)).await {
-            Ok(m) if dns::rcode(&m) == ResponseCode::NXDomain && dns::has_type(m.name_servers(), RecordType::SOA) => pass(format!("{q}: NXDOMAIN with SOA")),
+            Ok(m) if dns::rcode(&m) == ResponseCode::NXDomain && dns::has_type(&m.authorities, RecordType::SOA) => pass(format!("{q}: NXDOMAIN with SOA")),
             Ok(m) => fail(format!("{q}: {} (want NXDOMAIN with an SOA in authority)", dns::show(&m))),
             Err(e) => fail(format!("{q}: {e:#}")),
         }
@@ -76,7 +76,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     // after the delete was refilled from the plugin: the plugin itself still
     // has the Service.
     let ttl = match dns::query_udp_retry(server, &fqdn, RecordType::A, Duration::from_secs(2)).await {
-        Ok(m) => m.answers().iter().map(|r| r.ttl()).max().unwrap_or(0),
+        Ok(m) => m.answers.iter().map(|r| r.ttl()).max().unwrap_or(0),
         Err(_) => 0,
     };
     kube.delete_service(name).await?;
@@ -89,7 +89,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
                 if dns::rcode(&m) == ResponseCode::NXDomain {
                     return pass(format!("{fqdn} NXDOMAIN {} ms after the delete (answer TTL was {ttl}s)", start.elapsed().as_millis()));
                 }
-                if let Some(t) = m.answers().iter().map(|r| r.ttl()).max() {
+                if let Some(t) = m.answers.iter().map(|r| r.ttl()).max() {
                     if t > prev_ttl {
                         refills.push(start.elapsed().as_secs());
                     }

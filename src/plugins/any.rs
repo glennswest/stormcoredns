@@ -20,7 +20,7 @@ impl Handler for Any {
             return next.serve(req).await;
         }
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         m.add_answer(Record::from_rdata(req.qname(), 8482, RData::HINFO(HINFO::new("ANY obsoleted".into(), "See RFC 8482".into()))));
         Ok(Reply::Msg(m))
     }

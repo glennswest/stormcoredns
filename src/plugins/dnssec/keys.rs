@@ -3,17 +3,18 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
-use hickory_proto::rr::dnssec::rdata::{DNSSECRData, DNSKEY, RRSIG};
-use hickory_proto::rr::dnssec::tbs::rrset_tbs;
-use hickory_proto::rr::dnssec::{Algorithm, KeyFormat, KeyPair, Private};
-use hickory_proto::rr::{DNSClass, Name, RData, Record};
+use hickory_proto::dnssec::crypto::{signing_key_from_der, EcdsaSigningKey, Ed25519SigningKey};
+use hickory_proto::dnssec::rdata::{DNSSECRData, SigInput, DNSKEY, RRSIG};
+use hickory_proto::dnssec::{Algorithm, SigningKey, TBS};
+use hickory_proto::rr::{DNSClass, Name, RData, Record, SerialNumber};
+use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::path::{Path, PathBuf};
 
 pub struct DnsKey {
     /// Owner name of the key (lowercase FQDN), from the `.key` file.
     pub name: String,
     pub algorithm: Algorithm,
-    pub pair: KeyPair<Private>,
+    pub pair: Box<dyn SigningKey>,
     pub dnskey: DNSKEY,
     pub key_tag: u16,
     /// Key-signing key (flags 257).
@@ -28,34 +29,46 @@ impl DnsKey {
     /// Sign one RRset (all records share owner, class and type).
     pub fn sign_rrset(&self, set: &[Record], signer_name: &Name, inception: u32, expiration: u32) -> Result<Record> {
         let first = set.first().ok_or_else(|| anyhow!("empty rrset"))?;
-        let name = first.name();
+        let name = &first.name;
         // label count excludes a leading wildcard label
         let mut labels = name.num_labels();
         if name.is_wildcard() {
             labels = labels.saturating_sub(1);
         }
-        let ttl = set.iter().map(|r| r.ttl()).min().unwrap_or(first.ttl());
-        let tbs = rrset_tbs(name, DNSClass::IN, labels, first.record_type(), self.algorithm, ttl, expiration, inception, self.key_tag, signer_name, set)
-            .map_err(|e| anyhow!("tbs: {}", e))?;
-        let sig = self.pair.sign(self.algorithm, &tbs).map_err(|e| anyhow!("sign: {}", e))?;
-        let rrsig = RRSIG::new(first.record_type(), self.algorithm, labels, ttl, expiration, inception, self.key_tag, signer_name.clone(), sig);
+        let ttl = set.iter().map(|r| r.ttl).min().unwrap_or(first.ttl);
+        let input = SigInput {
+            type_covered: first.record_type(),
+            algorithm: self.algorithm,
+            num_labels: labels,
+            original_ttl: ttl,
+            sig_expiration: SerialNumber(expiration),
+            sig_inception: SerialNumber(inception),
+            key_tag: self.key_tag,
+            signer_name: signer_name.clone(),
+        };
+        let tbs = TBS::from_input(name, DNSClass::IN, &input, set.iter()).map_err(|e| anyhow!("tbs: {}", e))?;
+        let sig = self.pair.sign(&tbs).map_err(|e| anyhow!("sign: {}", e))?;
+        let rrsig = RRSIG::from_sig(input, sig);
         Ok(Record::from_rdata(name.clone(), ttl, RData::DNSSEC(DNSSECRData::RRSIG(rrsig))))
     }
 }
 
-fn build(pair: KeyPair<Private>, algorithm: Algorithm, name: &str, ksk: bool) -> Result<DnsKey> {
-    let mut dnskey = pair.to_dnskey(algorithm).map_err(|e| anyhow!("dnskey: {}", e))?;
-    if ksk {
-        dnskey = DNSKEY::new(true, true, false, algorithm, dnskey.public_key().to_vec());
-    }
+fn build(pair: Box<dyn SigningKey>, algorithm: Algorithm, name: &str, ksk: bool) -> Result<DnsKey> {
+    // zone key; a KSK also has the secure entry point flag (257, else 256)
+    let public = pair.to_public_key().map_err(|e| anyhow!("dnskey: {}", e))?;
+    let dnskey = DNSKEY::new(true, ksk, false, public);
     let key_tag = dnskey.calculate_key_tag().map_err(|e| anyhow!("key tag: {}", e))?;
     Ok(DnsKey { name: crate::dnsutil::fqdn(name), algorithm, pair, dnskey, key_tag, ksk })
 }
 
 /// Generate a fresh key (tests, and `sign` when asked to).
 pub fn generate(algorithm: Algorithm, name: &str) -> Result<DnsKey> {
-    let pkcs8 = KeyPair::generate_pkcs8(algorithm).map_err(|e| anyhow!("generate: {}", e))?;
-    let pair = KeyFormat::Pkcs8.decode_key(&pkcs8, None, algorithm).map_err(|e| anyhow!("decode generated key: {}", e))?;
+    let pkcs8: PrivatePkcs8KeyDer<'static> = match algorithm {
+        Algorithm::ED25519 => Ed25519SigningKey::generate_pkcs8(),
+        _ => EcdsaSigningKey::generate_pkcs8(algorithm),
+    }
+    .map_err(|e| anyhow!("generate: {}", e))?;
+    let pair = signing_key_from_der(&PrivateKeyDer::Pkcs8(pkcs8), algorithm).map_err(|e| anyhow!("decode generated key: {}", e))?;
     build(pair, algorithm, name, true)
 }
 
@@ -97,18 +110,18 @@ pub fn load_key(path: &Path) -> Result<DnsKey> {
         bail!("{}: algorithm mismatch between .key ({}) and .private ({})", base.display(), alg_num, alg_num2);
     }
     let algorithm = parse_algorithm(alg_num)?;
-    let pair = match algorithm {
+    let pair: Box<dyn SigningKey> = match algorithm {
         Algorithm::ECDSAP256SHA256 | Algorithm::ECDSAP384SHA384 => {
             let alg = if algorithm == Algorithm::ECDSAP256SHA256 { &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING } else { &ring::signature::ECDSA_P384_SHA384_FIXED_SIGNING };
             let mut uncompressed = vec![0x04];
             uncompressed.extend_from_slice(&public);
             let kp = ring::signature::EcdsaKeyPair::from_private_key_and_public_key(alg, &private, &uncompressed, &ring::rand::SystemRandom::new())
                 .map_err(|e| anyhow!("{}: bad ECDSA key: {}", base.display(), e))?;
-            KeyPair::from_ecdsa(kp)
+            Box::new(EcdsaSigningKey::from_ecdsa(kp, algorithm))
         }
         Algorithm::ED25519 => {
             let kp = ring::signature::Ed25519KeyPair::from_seed_and_public_key(&private, &public).map_err(|e| anyhow!("{}: bad ED25519 key: {}", base.display(), e))?;
-            KeyPair::from_ed25519(kp)
+            Box::new(Ed25519SigningKey::from_ed25519(kp))
         }
         _ => unreachable!(),
     };
@@ -163,9 +176,15 @@ fn parse_private_file(p: &Path) -> Result<(u8, Vec<u8>)> {
 /// PEM/PKCS#8 private key; the algorithm is inferred by trying each.
 fn load_pem(p: &Path) -> Result<DnsKey> {
     let bytes = std::fs::read(p).with_context(|| format!("reading {}", p.display()))?;
-    let fmt = if bytes.starts_with(b"-----") { KeyFormat::Pem } else { KeyFormat::Pkcs8 };
+    let der: PrivateKeyDer<'static> = if bytes.starts_with(b"-----") {
+        rustls_pemfile::private_key(&mut bytes.as_slice())
+            .with_context(|| format!("reading {}", p.display()))?
+            .ok_or_else(|| anyhow!("{}: no private key in the PEM file", p.display()))?
+    } else {
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(bytes))
+    };
     for alg in [Algorithm::ECDSAP256SHA256, Algorithm::ECDSAP384SHA384, Algorithm::ED25519] {
-        if let Ok(pair) = fmt.decode_key(&bytes, None, alg) {
+        if let Ok(pair) = signing_key_from_der(&der, alg) {
             let name = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| ".".into());
             return build(pair, alg, &name, true);
         }

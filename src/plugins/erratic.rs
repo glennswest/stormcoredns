@@ -62,8 +62,8 @@ impl Handler for Erratic {
         }
         let qname = req.qname();
         let mut m = req.new_reply();
-        m.set_authoritative(true);
-        m.set_truncated(trunc);
+        m.metadata.authoritative = true;
+        m.metadata.truncation = trunc;
         match req.qtype() {
             RecordType::A => {
                 let count = if self.large { 30 } else { 1 };
@@ -77,7 +77,7 @@ impl Handler for Erratic {
             RecordType::AXFR => {
                 // a small zone; truncation leaves out the closing SOA
                 let mut x = req.new_reply();
-                x.set_authoritative(true);
+                x.metadata.authoritative = true;
                 for r in xfr_records(&qname, !trunc) {
                     x.add_answer(r);
                 }
@@ -167,14 +167,14 @@ mod tests {
         let mut req = Request::for_test("example.org.", RecordType::A);
         assert!(matches!(h.serve_dns(&mut req, Next::new(&[])).await.unwrap(), Reply::Drop), "query 0 is dropped");
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let h = e(0);
         let mut req = Request::for_test("example.org.", RecordType::MX);
         assert!(matches!(h.serve_dns(&mut req, Next::new(&[])).await.unwrap(), Reply::Rcode(ResponseCode::ServFail)));
         let mut req = Request::for_test("example.org.", RecordType::AXFR);
         match h.serve_dns(&mut req, Next::new(&[])).await.unwrap() {
             Reply::Multi(v) => {
-                let a = v[0].answers();
+                let a = v[0].answers;
                 assert_eq!(a.len(), 6);
                 assert_eq!(a[0].record_type(), RecordType::SOA);
                 assert_eq!(a[5].record_type(), RecordType::SOA);

@@ -67,15 +67,15 @@ fn build_messages(req: &Request, mut records: Vec<Record>) -> Vec<Message> {
     };
     let mut out = Vec::new();
     let mut cur = req.new_reply();
-    cur.set_authoritative(true);
-    *cur.extensions_mut() = None;
+    cur.metadata.authoritative = true;
+    *cur.edns = None;
     let mut size = 12 + 64;
     let push = |cur: &mut Message, size: &mut usize, r: Record, out: &mut Vec<Message>, req: &Request| {
         let rlen = r.to_bytes().map(|b| b.len()).unwrap_or(64);
-        if *size + rlen > MSG_LIMIT && !cur.answers().is_empty() {
+        if *size + rlen > MSG_LIMIT && !cur.answers.is_empty() {
             let mut next = req.new_reply();
-            next.set_authoritative(true);
-            *next.extensions_mut() = None;
+            next.metadata.authoritative = true;
+            *next.edns = None;
             out.push(std::mem::replace(cur, next));
             *size = 12 + 64;
         }
@@ -90,7 +90,7 @@ fn build_messages(req: &Request, mut records: Vec<Record>) -> Vec<Message> {
     out.push(cur);
     // only the first message carries the question
     for m in out.iter_mut().skip(1) {
-        m.take_queries();
+        m.queries.clear();
     }
     out
 }
@@ -115,7 +115,7 @@ impl Handler for Transfer {
         }
         if !self.allowed(req.ip()) {
             let mut m = req.new_reply();
-            m.set_response_code(ResponseCode::Refused);
+            m.metadata.response_code = ResponseCode::Refused;
             return Ok(Reply::Msg(m));
         }
         let Some(records) = self.records(&zone) else {
@@ -123,14 +123,14 @@ impl Handler for Transfer {
         };
         // IXFR: same serial → just the SOA
         if qtype == RecordType::IXFR {
-            let client_serial = req.msg.name_servers().iter().find_map(|r| match r.data() {
+            let client_serial = req.msg.authorities.iter().find_map(|r| match r.data() {
                 Some(RData::SOA(s)) => Some(s.serial()),
                 _ => None,
             });
             if let (Some(cs), Some(ours)) = (client_serial, serial_of(&records)) {
                 if cs == ours {
                     let mut m = req.new_reply();
-                    m.set_authoritative(true);
+                    m.metadata.authoritative = true;
                     if let Some(soa) = records.iter().find(|r| r.record_type() == RecordType::SOA) {
                         m.add_answer(soa.clone());
                     }
@@ -142,8 +142,8 @@ impl Handler for Transfer {
             // RFC 5936: AXFR needs TCP; answer with the SOA and TC so the
             // client retries over TCP
             let mut m = req.new_reply();
-            m.set_authoritative(true);
-            m.set_truncated(true);
+            m.metadata.authoritative = true;
+            m.metadata.truncation = true;
             if let Some(soa) = records.iter().find(|r| r.record_type() == RecordType::SOA) {
                 m.add_answer(soa.clone());
             }
@@ -171,11 +171,11 @@ pub fn notify(zone: &str) {
     let Ok(name) = hickory_proto::rr::Name::from_ascii(&zone) else { return };
     tokio::spawn(async move {
         for addr in targets {
-            let mut m = Message::new();
-            m.set_id(rand::random());
-            m.set_op_code(OpCode::Notify);
-            m.set_message_type(MessageType::Query);
-            m.set_authoritative(true);
+            let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+            m.metadata.id = rand::random();
+            m.metadata.op_code = OpCode::Notify;
+            m.metadata.message_type = MessageType::Query;
+            m.metadata.authoritative = true;
             m.add_query(Query::query(name.clone(), RecordType::SOA));
             let Ok(wire) = m.to_vec() else { continue };
             let bind = if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
@@ -252,10 +252,10 @@ mod tests {
         let req = Request::for_test("example.org.", RecordType::AXFR);
         let msgs = build_messages(&req, recs);
         assert!(msgs.len() > 1);
-        let total: usize = msgs.iter().map(|m| m.answers().len()).sum();
+        let total: usize = msgs.iter().map(|m| m.answers.len()).sum();
         assert_eq!(total, 5002);
-        assert_eq!(msgs[0].answers()[0].record_type(), RecordType::SOA);
-        assert_eq!(msgs.last().unwrap().answers().last().unwrap().record_type(), RecordType::SOA);
+        assert_eq!(msgs[0].answers[0].record_type(), RecordType::SOA);
+        assert_eq!(msgs.last().unwrap().answers.last().unwrap().record_type(), RecordType::SOA);
         for m in &msgs {
             assert!(m.to_vec().unwrap().len() < 65535);
         }

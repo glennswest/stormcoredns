@@ -180,7 +180,7 @@ impl Handler for Hosts {
         }
         // answers, or NODATA for a name that has the other address family
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         for r in answers {
             m.add_answer(r);
         }
@@ -297,20 +297,20 @@ mod tests {
         h.load();
         let mut req = Request::for_test("alias.example.org.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let mut req = Request::for_test("v6.example.org.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NoError, "NODATA: name exists as AAAA");
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError, "NODATA: name exists as AAAA");
         let mut req = Request::for_test("v6.example.org.", RecordType::MX);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NoError, "NODATA for another type");
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError, "NODATA for another type");
         let mut req = Request::for_test("nope.example.org.", RecordType::A);
         let r = h.serve_dns(&mut req, Next::new(&[])).await.unwrap();
         assert!(matches!(r, Reply::Rcode(ResponseCode::ServFail)), "unknown name is SERVFAIL, as in CoreDNS");
         // PTR outside the zones is still answered; an unknown PTR goes on
         let mut req = Request::for_test("1.0.0.10.in-addr.arpa.", RecordType::PTR);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers().len(), 2);
+        assert_eq!(m.answers.len(), 2);
         let mut req = Request::for_test("9.0.0.10.in-addr.arpa.", RecordType::PTR);
         assert!(h.serve_dns(&mut req, Next::new(&[])).await.is_err(), "unknown PTR → next (empty chain)");
         // fallthrough only for unknown names

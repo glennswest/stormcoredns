@@ -39,7 +39,7 @@ impl Errors {
     fn log(&self, req: &Request, e: &crate::plugin::PluginError) {
         let text = format!(
             "{} {} {}: {}",
-            req.msg.id(),
+            req.msg.metadata.id,
             req.name_uncached(),
             req.type_str(),
             e

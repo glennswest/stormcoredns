@@ -26,8 +26,8 @@ fn next_id() -> u16 {
 
 /// Build a query. `edns` is the advertised UDP size, or no OPT record.
 pub fn build(name: &str, qtype: RecordType, edns: Option<u16>) -> Result<Message> {
-    let mut m = Message::new();
-    m.set_id(next_id()).set_message_type(MessageType::Query).set_op_code(OpCode::Query).set_recursion_desired(true);
+    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+    m.set_id(next_id()).set_message_type(MessageType::Query).set_op_code(OpCode::Query).metadata.recursion_desired = true;
     let n = Name::from_ascii(name).with_context(|| format!("bad name {name}"))?;
     m.add_query(Query::query(n, qtype));
     if let Some(size) = edns {
@@ -43,12 +43,12 @@ pub async fn query(server: SocketAddr, name: &str, qtype: RecordType, proto: Pro
     let q = build(name, qtype, edns)?;
     let wire = q.to_vec()?;
     let reply = match proto {
-        Proto::Udp => exchange_udp(server, &wire, q.id(), timeout).await?,
+        Proto::Udp => exchange_udp(server, &wire, q.metadata.id, timeout).await?,
         Proto::Tcp => exchange_tcp(server, &wire, timeout).await?,
     };
     let m = Message::from_vec(&reply).context("unparsable reply")?;
-    if m.id() != q.id() {
-        bail!("reply id {} does not match query id {}", m.id(), q.id());
+    if m.metadata.id != q.metadata.id {
+        bail!("reply id {} does not match query id {}", m.metadata.id, q.metadata.id);
     }
     Ok(m)
 }
@@ -99,13 +99,13 @@ async fn exchange_tcp(server: SocketAddr, wire: &[u8], timeout: Duration) -> Res
 // ── reading replies ─────────────────────────────────────────────────────────
 
 pub fn rcode(m: &Message) -> ResponseCode {
-    m.response_code()
+    m.metadata.response_code
 }
 
 /// The addresses in the answer section, sorted and without duplicates.
 pub fn addrs(m: &Message) -> Vec<IpAddr> {
     let mut v: Vec<IpAddr> = m
-        .answers()
+        .answers
         .iter()
         .filter_map(|r| match r.data() {
             Some(RData::A(a)) => Some(IpAddr::V4(a.0)),
@@ -121,7 +121,7 @@ pub fn addrs(m: &Message) -> Vec<IpAddr> {
 /// SRV answers as (port, target), sorted and without duplicates.
 pub fn srvs(m: &Message) -> Vec<(u16, String)> {
     let mut v: Vec<(u16, String)> = m
-        .answers()
+        .answers
         .iter()
         .filter_map(|r| match r.data() {
             Some(RData::SRV(s)) => Some((s.port(), lower(s.target()))),
@@ -134,15 +134,15 @@ pub fn srvs(m: &Message) -> Vec<(u16, String)> {
 }
 
 pub fn ptrs(m: &Message) -> Vec<String> {
-    m.answers().iter().filter_map(|r| match r.data() { Some(RData::PTR(p)) => Some(lower(&p.0)), _ => None }).collect()
+    m.answers.iter().filter_map(|r| match r.data() { Some(RData::PTR(p)) => Some(lower(&p.0)), _ => None }).collect()
 }
 
 pub fn cnames(m: &Message) -> Vec<String> {
-    m.answers().iter().filter_map(|r| match r.data() { Some(RData::CNAME(c)) => Some(lower(&c.0)), _ => None }).collect()
+    m.answers.iter().filter_map(|r| match r.data() { Some(RData::CNAME(c)) => Some(lower(&c.0)), _ => None }).collect()
 }
 
 pub fn txts(m: &Message) -> Vec<String> {
-    m.answers()
+    &m.answers
         .iter()
         .filter_map(|r| match r.data() {
             Some(RData::TXT(t)) => Some(t.txt_data().iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<String>()),
@@ -178,18 +178,18 @@ pub fn reverse(ip: IpAddr) -> String {
 
 /// Short text for a reply, for test details.
 pub fn show(m: &Message) -> String {
-    let answers: Vec<String> = m.answers().iter().map(|r| format!("{} {} ttl={}", r.record_type(), r.data().map(|d| d.to_string()).unwrap_or_default(), r.ttl())).collect();
-    format!("{:?}{} [{}]", rcode(m), if m.truncated() { " TC" } else { "" }, answers.join(", "))
+    let answers: Vec<String> = m.answers.iter().map(|r| format!("{} {} ttl={}", r.record_type(), r.data().map(|d| d.to_string()).unwrap_or_default(), r.ttl())).collect();
+    format!("{:?}{} [{}]", rcode(m), if m.metadata.truncation { " TC" } else { "" }, answers.join(", "))
 }
 
 /// The longest a cache may hold one reply: its smallest answer TTL, or for
 /// a negative reply the SOA's min(TTL, MINIMUM) (RFC 2308), as `cache`
 /// computes it. A reply with neither is not cacheable.
 pub fn cache_ttl(m: &Message) -> u32 {
-    if let Some(t) = m.answers().iter().map(|r| r.ttl()).min() {
+    if let Some(t) = m.answers.iter().map(|r| r.ttl()).min() {
         return t;
     }
-    m.name_servers()
+    &m.authorities
         .iter()
         .find_map(|r| match r.data() {
             Some(RData::SOA(soa)) => Some(r.ttl().min(soa.minimum())),
@@ -249,11 +249,11 @@ mod tests {
     fn query_round_trips() {
         let q = build("web.default.svc.cluster.local.", RecordType::SRV, Some(1232)).unwrap();
         let back = Message::from_vec(&q.to_vec().unwrap()).unwrap();
-        assert_eq!(back.id(), q.id());
-        assert_eq!(back.queries()[0].query_type(), RecordType::SRV);
-        assert_eq!(back.edns().map(|e| e.max_payload()), Some(1232));
+        assert_eq!(back.metadata.id, q.metadata.id);
+        assert_eq!(back.queries[0].query_type(), RecordType::SRV);
+        assert_eq!(back.edns.as_ref().map(|e| e.max_payload()), Some(1232));
         let plain = build("a.", RecordType::A, None).unwrap();
-        assert!(plain.edns().is_none());
+        assert!(plain.edns.is_none());
     }
 
     #[test]
@@ -280,14 +280,14 @@ mod tests {
         use hickory_proto::rr::rdata::{A, SOA};
         use hickory_proto::rr::Record;
         let n = Name::from_ascii("x.cluster.local.").unwrap();
-        let mut pos = Message::new();
+        let mut pos = Message::new(0, MessageType::Query, OpCode::Query);
         pos.add_answer(Record::from_rdata(n.clone(), 30, RData::A(A::new(10, 0, 0, 1))));
         pos.add_answer(Record::from_rdata(n.clone(), 12, RData::A(A::new(10, 0, 0, 2))));
         assert_eq!(cache_ttl(&pos), 12);
-        let mut neg = Message::new();
+        let mut neg = Message::new(0, MessageType::Query, OpCode::Query);
         let soa = SOA::new(Name::from_ascii("ns.dns.cluster.local.").unwrap(), Name::from_ascii("hostmaster.cluster.local.").unwrap(), 1, 7200, 1800, 86400, 5);
-        neg.add_name_server(Record::from_rdata(Name::from_ascii("cluster.local.").unwrap(), 30, RData::SOA(soa)));
+        neg.add_authority(Record::from_rdata(Name::from_ascii("cluster.local.").unwrap(), 30, RData::SOA(soa)));
         assert_eq!(cache_ttl(&neg), 5);
-        assert_eq!(cache_ttl(&Message::new()), 0);
+        assert_eq!(cache_ttl(&Message::new(0, MessageType::Query, OpCode::Query)), 0);
     }
 }

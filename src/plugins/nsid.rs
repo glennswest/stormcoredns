@@ -17,11 +17,11 @@ impl Handler for Nsid {
     }
 
     async fn serve_dns(&self, req: &mut Request, next: Next<'_>) -> DnsResult {
-        let wants = req.msg.edns().map(|e| e.option(EdnsCode::NSID).is_some()).unwrap_or(false);
+        let wants = req.msg.edns.as_ref().map(|e| e.option(EdnsCode::NSID).is_some()).unwrap_or(false);
         let mut r = next.serve(req).await?;
         if wants {
             if let Some(m) = r.msg_mut() {
-                let e = m.extensions_mut().get_or_insert_with(|| {
+                let e = m.edns.get_or_insert_with(|| {
                     let mut e = hickory_proto::op::Edns::new();
                     e.set_max_payload(crate::dnsutil::UDP_BUFFER_SIZE);
                     e

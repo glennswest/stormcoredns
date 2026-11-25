@@ -21,7 +21,7 @@ pub struct GeoIp {
 impl GeoIp {
     fn client_ip(&self, req: &Request) -> IpAddr {
         if self.edns_subnet {
-            if let Some(e) = req.msg.edns() {
+            if let Some(e) = req.msg.edns.as_ref() {
                 if let Some(opt @ EdnsOption::Subnet(_)) = e.option(EdnsCode::Subnet) {
                     // family(2) source(1) scope(1) address(n), RFC 7871
                     if let Ok(b) = Vec::<u8>::try_from(opt) {

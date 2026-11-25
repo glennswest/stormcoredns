@@ -48,10 +48,10 @@ pub struct Secondary {
 /// Run an AXFR against `primary` and return the records.
 pub async fn axfr(primary: SocketAddr, origin: &str) -> Result<Vec<Record>> {
     let name = Name::from_ascii(origin)?;
-    let mut q = Message::new();
-    q.set_id(rand::random());
-    q.set_message_type(MessageType::Query);
-    q.set_op_code(OpCode::Query);
+    let mut q = Message::new(0, MessageType::Query, OpCode::Query);
+    q.metadata.id = rand::random();
+    q.metadata.message_type = MessageType::Query;
+    q.metadata.op_code = OpCode::Query;
     q.add_query(Query::query(name.clone(), RecordType::AXFR));
     let wire = q.to_vec()?;
     let mut stream = tokio::time::timeout(Duration::from_secs(10), tokio::net::TcpStream::connect(primary)).await.map_err(|_| anyhow!("connect {}: timeout", primary))??;
@@ -69,10 +69,10 @@ pub async fn axfr(primary: SocketAddr, origin: &str) -> Result<Vec<Record>> {
         let mut buf = vec![0u8; n];
         tokio::time::timeout_at(deadline, stream.read_exact(&mut buf)).await.map_err(|_| anyhow!("axfr from {}: timeout", primary))??;
         let m = Message::from_bytes(&buf)?;
-        if m.response_code() != ResponseCode::NoError {
-            bail!("axfr from {}: {}", primary, crate::plugin::replacer::rcode_str(m.response_code()));
+        if m.metadata.response_code != ResponseCode::NoError {
+            bail!("axfr from {}: {}", primary, crate::plugin::replacer::rcode_str(m.metadata.response_code));
         }
-        for r in m.answers() {
+        for r in &m.answers {
             if r.record_type() == RecordType::SOA {
                 soa_seen += 1;
                 if soa_seen == 2 {
@@ -81,7 +81,7 @@ pub async fn axfr(primary: SocketAddr, origin: &str) -> Result<Vec<Record>> {
             }
             records.push(r.clone());
         }
-        if m.answers().is_empty() {
+        if m.answers.is_empty() {
             bail!("axfr from {}: empty message before final SOA", primary);
         }
     }
@@ -107,14 +107,14 @@ async fn tcp_exchange(server: SocketAddr, q: &Message) -> Result<Message> {
 
 /// The primary's SOA serial, asked over TCP as CoreDNS does (harder to spoof).
 async fn primary_serial(primary: SocketAddr, origin: &str) -> Result<u32> {
-    let mut q = Message::new();
-    q.set_id(rand::random());
+    let mut q = Message::new(0, MessageType::Query, OpCode::Query);
+    q.metadata.id = rand::random();
     q.add_query(Query::query(Name::from_ascii(origin)?, RecordType::SOA));
     let m = tcp_exchange(primary, &q).await?;
-    if m.response_code() != ResponseCode::NoError {
-        bail!("soa query to {}: {}", primary, crate::plugin::replacer::rcode_str(m.response_code()));
+    if m.metadata.response_code != ResponseCode::NoError {
+        bail!("soa query to {}: {}", primary, crate::plugin::replacer::rcode_str(m.metadata.response_code));
     }
-    m.answers()
+    &m.answers
         .iter()
         .find_map(|r| match r.data() {
             Some(RData::SOA(s)) => Some(s.serial()),
@@ -270,7 +270,7 @@ impl Handler for Secondary {
             return next.serve(req).await;
         };
         let sz = self.zones.iter().find(|s| s.origin == z).unwrap();
-        if req.msg.op_code() == OpCode::Notify {
+        if req.msg.metadata.op_code == OpCode::Notify {
             if sz.primaries.iter().any(|p| p.ip() == req.ip()) {
                 sz.kick.notify_one();
             }
@@ -280,14 +280,14 @@ impl Handler for Secondary {
             Some(_) if sz.expired.load(Ordering::Relaxed) => Ok(Reply::Msg({
                 // expired: SERVFAIL, as CoreDNS
                 let mut m = req.new_reply();
-                m.set_response_code(ResponseCode::ServFail);
+                m.metadata.response_code = ResponseCode::ServFail;
                 m
             })),
             Some(zone) => Ok(Reply::Msg(zone.lookup(req, true).await)),
             None => {
                 // not transferred yet: SERVFAIL like CoreDNS
                 let mut m = req.new_reply();
-                m.set_response_code(ResponseCode::ServFail);
+                m.metadata.response_code = ResponseCode::ServFail;
                 Ok(Reply::Msg(m))
             }
         }
@@ -387,12 +387,12 @@ mod tests {
                     let q = Message::from_bytes(&buf).unwrap();
                     let n = |s: &str| Name::from_ascii(s).unwrap();
                     let soa = Record::from_rdata(n("example.org."), 60, RData::SOA(SOA::new(n("ns.example.org."), n("h.example.org."), serial, 1, 1, 3, 60)));
-                    let mut m = Message::new();
-                    m.set_id(q.id());
-                    m.set_message_type(MessageType::Response);
-                    m.add_query(q.queries()[0].clone());
+                    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+                    m.metadata.id = q.metadata.id;
+                    m.metadata.message_type = MessageType::Response;
+                    m.add_query(q.queries[0].clone());
                     m.add_answer(soa.clone());
-                    if q.queries()[0].query_type() == RecordType::AXFR {
+                    if q.queries[0].query_type() == RecordType::AXFR {
                         m.add_answer(Record::from_rdata(n("www.example.org."), 60, RData::A(A::new(192, 0, 2, 1))));
                         m.add_answer(soa);
                     }
@@ -444,14 +444,14 @@ mod tests {
         let s = Secondary { zones: vec![z.clone()], names: vec!["example.org.".into()] };
         let mut req = Request::for_test("www.example.org.", RecordType::A);
         let m = s.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::ServFail, "expired zone is SERVFAIL");
+        assert_eq!(m.metadata.response_code, ResponseCode::ServFail, "expired zone is SERVFAIL");
         assert!(s.transfer("example.org.").is_none(), "no AXFR out of an expired zone");
         // primary back (same serial): an expired zone is transferred again
         up.store(true, Ordering::SeqCst);
         until("recovered", || !z.expired.load(Ordering::SeqCst)).await;
         let mut req = Request::for_test("www.example.org.", RecordType::A);
         let m = s.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         // shutdown stops the loop
         cancel.cancel();
         tokio::time::timeout(Duration::from_secs(10), task).await.expect("the refresh task stops").unwrap();

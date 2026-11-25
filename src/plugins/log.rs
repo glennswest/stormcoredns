@@ -37,7 +37,7 @@ fn classify(rcode: ResponseCode, msg: Option<&hickory_proto::op::Message>) -> Cl
     match rcode {
         ResponseCode::NoError => {
             if let Some(m) = msg {
-                if m.answers().is_empty() {
+                if m.answers.is_empty() {
                     return Class::Denial; // NODATA
                 }
             }

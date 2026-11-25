@@ -96,7 +96,7 @@ fn eval_action(action: &str, d: &Data<'_>) -> Result<String> {
         [".Class"] => Ok(d.req.class_str()),
         [".Type"] => Ok(d.req.type_str()),
         [".Remote"] => Ok(d.req.ip().to_string()),
-        [".Message.Id"] => Ok(d.req.msg.id().to_string()),
+        [".Message.Id"] => Ok(d.req.msg.metadata.id.to_string()),
         ["index", ".Match", n] => {
             let i: usize = n.parse().map_err(|_| anyhow!("bad match index {}", n))?;
             d.matches.get(i).cloned().ok_or_else(|| anyhow!("match index {} out of range", i))
@@ -193,8 +193,8 @@ impl Handler for TemplateHandler {
             }
             let data = Data { req, zone, name: name.clone(), matches, groups };
             let mut m = req.new_reply();
-            m.set_authoritative(true);
-            m.set_response_code(t.rcode);
+            m.metadata.authoritative = true;
+            m.metadata.response_code = t.rcode;
             let mut chased: Vec<Record> = Vec::new();
             for (section, tpls) in [("answer", &t.answer), ("additional", &t.additional), ("authority", &t.authority)] {
                 for tpl in tpls {
@@ -219,10 +219,10 @@ impl Handler for TemplateHandler {
                                 if matches!(req.qtype(), RecordType::A | RecordType::AAAA) {
                                     if let Some(RData::CNAME(c)) = r.data() {
                                         if let Ok(up) = crate::server::self_lookup(req, c.0.clone(), req.qtype()).await {
-                                            if up.truncated() {
-                                                m.set_truncated(true);
+                                            if up.metadata.truncation {
+                                                m.metadata.truncation = true;
                                             }
-                                            chased.extend(up.answers().iter().cloned());
+                                            chased.extend(up.answers.iter().cloned());
                                         }
                                     }
                                 }
@@ -235,14 +235,14 @@ impl Handler for TemplateHandler {
                                 m.add_additional(r);
                             }
                             _ => {
-                                m.add_name_server(r);
+                                m.add_authority(r);
                             }
                         }
                     }
                 }
             }
             if let Some((code, reason)) = &t.ederror {
-                let mut e = m.extensions().clone().unwrap_or_else(Edns::new);
+                let mut e = m.edns.clone().unwrap_or_else(Edns::new);
                 e.set_max_payload(4096);
                 e.set_dnssec_ok(true);
                 let mut data = code.to_be_bytes().to_vec();
@@ -339,9 +339,9 @@ mod tests {
         let h = TemplateHandler { templates: vec![t] };
         let mut req = Request::for_test("ip-10-1-2-3.example.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].ttl(), 60);
-        assert!(matches!(m.answers()[0].data(), Some(hickory_proto::rr::RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 1, 2, 3)));
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].ttl(), 60);
+        assert!(matches!(m.answers[0].data(), Some(hickory_proto::rr::RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 1, 2, 3)));
     }
 
     #[tokio::test]
@@ -361,8 +361,8 @@ mod tests {
         let h = TemplateHandler { templates: vec![t] };
         let mut req = Request::for_test("foo.invalid.", RecordType::AAAA);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
-        assert_eq!(m.name_servers().len(), 1);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
+        assert_eq!(m.authorities.len(), 1);
     }
 
     #[tokio::test]
@@ -388,7 +388,7 @@ mod tests {
         // a match carries the EDE
         let mut req = Request::for_test("ok.example.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
-        let ede = m.extensions().as_ref().unwrap().options().get(hickory_proto::rr::rdata::opt::EdnsCode::from(15)).cloned();
+        let ede = m.edns.as_ref().unwrap().options().get(hickory_proto::rr::rdata::opt::EdnsCode::from(15)).cloned();
         assert_eq!(ede, Some(EdnsOption::Unknown(15, b"\x00\x11nope".to_vec())));
     }
 }

@@ -146,7 +146,7 @@ async fn handle(srv: Arc<Server>, req: Request<Incoming>, remote: SocketAddr, lo
         Some(bytes) => {
             // cache-control from the minimal TTL in the answer
             let ttl = hickory_proto::op::Message::from_vec(&bytes)
-                .map(|m| crate::dnsutil::minimal_ttl(&m, m.response_code() == hickory_proto::op::ResponseCode::NXDomain).as_secs())
+                .map(|m| crate::dnsutil::minimal_ttl(&m, m.metadata.response_code == hickory_proto::op::ResponseCode::NXDomain).as_secs())
                 .unwrap_or(0);
             crate::metrics::HTTPS_RESPONSES.with_label_values(&[&srv.label, "200"]).inc();
             Response::builder()
@@ -242,7 +242,7 @@ mod tests {
         writer.abort();
 
         // a real query still gets through
-        let mut m = hickory_proto::op::Message::new();
+        let mut m = hickory_proto::op::Message::new(0, MessageType::Query, OpCode::Query);
         m.add_query(hickory_proto::op::Query::query("example.org.".parse().unwrap(), hickory_proto::rr::RecordType::A));
         let q = m.to_vec().unwrap();
         let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();

@@ -259,14 +259,14 @@ impl Proxy {
     /// One health-check probe: `. NS` (or a configured domain) — the
     /// upstream must answer *something* (rcode is irrelevant).
     async fn probe(&self, recursion_desired: bool, domain: &Name) -> bool {
-        let mut m = Message::new();
-        m.set_id(rand::random());
-        m.set_recursion_desired(recursion_desired);
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.id = rand::random();
+        m.metadata.recursion_desired = recursion_desired;
         m.add_query(Query::query(domain.clone(), RecordType::NS));
         let Ok(wire) = m.to_vec() else { return false };
         match tokio::time::timeout(Duration::from_secs(5), self.exchange(&wire, self.transport == UpstreamTransport::Tls)).await {
             Ok(Ok(resp)) => match Message::from_bytes(&resp) {
-                Ok(r) => r.id() == m.id(),
+                Ok(r) => r.metadata.id == m.metadata.id,
                 Err(_) => false,
             },
             _ => false,
@@ -351,12 +351,12 @@ impl Forward {
         REQUEST_COUNT.with_label_values(&[&p.addr_str]).inc();
         let mut raw = p.exchange(&wire, want_tcp).await?;
         let mut resp = Message::from_bytes(&raw)?;
-        if resp.truncated() && !want_tcp {
+        if resp.metadata.truncation && !want_tcp {
             // retry over TCP
             raw = p.exchange(&wire, true).await?;
             resp = Message::from_bytes(&raw)?;
         }
-        let rc = crate::plugin::replacer::rcode_str(resp.response_code());
+        let rc = crate::plugin::replacer::rcode_str(resp.metadata.response_code);
         RCODE_COUNT.with_label_values(&[&rc, &p.addr_str]).inc();
         REQUEST_DURATION.with_label_values(&[&p.addr_str, &rc]).observe(start.elapsed().as_secs_f64());
         Ok(resp)
@@ -396,7 +396,7 @@ impl Handler for ForwardHandler {
         // `next RCODE...`: as in CoreDNS, hand the query to the next plugin
         // only when that plugin is another forward; otherwise reply
         if let Ok(Reply::Msg(m)) = &r {
-            if f.next_rcodes.contains(&m.response_code()) && next.name() == Some("forward") {
+            if f.next_rcodes.contains(&m.metadata.response_code) && next.name() == Some("forward") {
                 return next.serve(req).await;
             }
         }
@@ -471,13 +471,13 @@ impl ForwardHandler {
                         continue;
                     }
                     p.fails.store(0, Ordering::Relaxed);
-                    let rc = resp.response_code();
+                    let rc = resp.metadata.response_code;
                     if f.failover_rcodes.contains(&rc) {
                         // try the next upstream; this reply is the answer if none is left
                         last_reply = Some(resp);
                         continue;
                     }
-                    resp.set_id(req.msg.id());
+                    resp.metadata.id = req.msg.metadata.id;
                     return Ok(Reply::Msg(resp));
                 }
                 Err(e) => {
@@ -490,7 +490,7 @@ impl ForwardHandler {
         }
         if let Some(r) = last_reply {
             let mut r = r;
-            r.set_id(req.msg.id());
+            r.metadata.id = req.msg.metadata.id;
             return Ok(Reply::Msg(r));
         }
         if fails == 0 {
@@ -671,11 +671,11 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
 /// Convenience for other plugins (`upstream` self-lookups via forward):
 /// resolve `name`/`qtype` through the first forward instance's proxies.
 pub async fn lookup(f: &Forward, name: Name, qtype: RecordType) -> Result<Message> {
-    let mut m = Message::new();
-    m.set_id(rand::random());
-    m.set_recursion_desired(true);
-    m.set_op_code(OpCode::Query);
-    m.set_message_type(MessageType::Query);
+    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+    m.metadata.id = rand::random();
+    m.metadata.recursion_desired = true;
+    m.metadata.op_code = OpCode::Query;
+    m.metadata.message_type = MessageType::Query;
     m.add_query(Query::query(name, qtype));
     let req = Request::new(m, "127.0.0.1:0".parse().unwrap(), "127.0.0.1:0".parse().unwrap(), Proto::Udp);
     for p in f.list() {
@@ -738,8 +738,8 @@ mod tests {
             let mut buf = [0u8; 4096];
             while let Ok((n, from)) = sock.recv_from(&mut buf) {
                 let Ok(mut m) = Message::from_vec(&buf[..n]) else { continue };
-                m.set_message_type(MessageType::Response);
-                m.set_response_code(rcode);
+                m.metadata.message_type = MessageType::Response;
+                m.metadata.response_code = rcode;
                 let _ = sock.send_to(&m.to_vec().unwrap(), from);
             }
         });

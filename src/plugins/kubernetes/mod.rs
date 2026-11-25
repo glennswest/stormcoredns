@@ -163,16 +163,16 @@ impl Kubernetes {
 
     fn nxdomain(&self, req: &Request, zone: &str) -> Message {
         let mut m = req.new_reply();
-        m.set_authoritative(true);
-        m.set_response_code(ResponseCode::NXDomain);
-        m.add_name_server(self.soa(zone));
+        m.metadata.authoritative = true;
+        m.metadata.response_code = ResponseCode::NXDomain;
+        m.add_authority(self.soa(zone));
         m
     }
 
     fn nodata(&self, req: &Request, zone: &str) -> Message {
         let mut m = req.new_reply();
-        m.set_authoritative(true);
-        m.add_name_server(self.soa(zone));
+        m.metadata.authoritative = true;
+        m.add_authority(self.soa(zone));
         m
     }
 
@@ -227,7 +227,7 @@ impl Kubernetes {
                 answers.push(Record::from_rdata(qname.clone(), self.ttl, RData::CNAME(CNAME(target.clone()))));
                 if matches!(qtype, RecordType::A | RecordType::AAAA) && !dnsutil::is_subdomain(&self.primary_zone, &dnsutil::name_str(&target)) {
                     if let Ok(m) = crate::server::self_lookup(req, target, qtype).await {
-                        answers.extend(m.answers().iter().cloned());
+                        answers.extend(m.answers.iter().cloned());
                     }
                 }
             }
@@ -322,7 +322,7 @@ impl Kubernetes {
         let qtype = req.qtype();
         let parsed = parse_name(&rel);
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         match parsed {
             Parsed::Apex => {
                 match qtype {
@@ -335,7 +335,7 @@ impl Kubernetes {
                         &mut m
                     }
                     _ => {
-                        m.add_name_server(self.soa(zone));
+                        m.add_authority(self.soa(zone));
                         &mut m
                     }
                 };
@@ -396,7 +396,7 @@ impl Kubernetes {
                 if !any_found {
                     return Ok(None);
                 }
-                if m.answers().is_empty() {
+                if m.answers.is_empty() {
                     return Ok(Some(self.nodata(req, zone)));
                 }
                 Ok(Some(m))
@@ -456,13 +456,13 @@ impl Kubernetes {
             return None;
         }
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         if matches!(req.qtype(), RecordType::PTR | RecordType::ANY) {
             for t in targets {
                 m.add_answer(Record::from_rdata(req.qname(), self.ttl, RData::PTR(PTR(t))));
             }
         } else {
-            m.add_name_server(self.soa(zone));
+            m.add_authority(self.soa(zone));
         }
         Some(m)
     }
@@ -835,75 +835,75 @@ mod tests {
     async fn cluster_ip_service() {
         let k = k8s();
         let m = q(&k, "web.default.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert_eq!(m.answers().len(), 1);
-        assert!(matches!(m.answers()[0].data(), Some(RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 96, 0, 10)));
-        assert!(m.authoritative());
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(m.answers.len(), 1);
+        assert!(matches!(m.answers[0].data(), Some(RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 96, 0, 10)));
+        assert!(m.metadata.authoritative);
         // AAAA → NODATA with SOA
         let m = q(&k, "web.default.svc.cluster.local.", RecordType::AAAA).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert!(m.answers().is_empty());
-        assert_eq!(m.name_servers()[0].record_type(), RecordType::SOA);
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert!(m.answers.is_empty());
+        assert_eq!(m.authorities[0].record_type(), RecordType::SOA);
     }
 
     #[tokio::test]
     async fn srv_records() {
         let k = k8s();
         let m = q(&k, "_http._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
-        assert_eq!(m.answers().len(), 1);
-        assert!(matches!(m.answers()[0].data(), Some(RData::SRV(s)) if s.port() == 80));
-        assert_eq!(m.additionals().len(), 1);
+        assert_eq!(m.answers.len(), 1);
+        assert!(matches!(m.answers[0].data(), Some(RData::SRV(s)) if s.port() == 80));
+        assert_eq!(m.additionals.len(), 1);
         let m = q(&k, "_nope._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&k, "web.default.svc.cluster.local.", RecordType::SRV).await;
-        assert_eq!(m.answers().len(), 2);
+        assert_eq!(m.answers.len(), 2);
     }
 
     #[tokio::test]
     async fn headless_and_endpoints() {
         let k = k8s();
         let m = q(&k, "hl.default.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1, "only the ready endpoint");
+        assert_eq!(m.answers.len(), 1, "only the ready endpoint");
         let m = q(&k, "pg-0.hl.default.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
-        assert_eq!(m.answers()[0].name().to_ascii(), "pg-0.hl.default.svc.cluster.local.");
+        assert_eq!(m.answers.len(), 1);
+        assert_eq!(m.answers[0].name().to_ascii(), "pg-0.hl.default.svc.cluster.local.");
         let m = q(&k, "_db._tcp.hl.default.svc.cluster.local.", RecordType::SRV).await;
-        assert_eq!(m.answers().len(), 1);
-        assert!(matches!(m.answers()[0].data(), Some(RData::SRV(s)) if s.target().to_ascii() == "pg-0.hl.default.svc.cluster.local."));
+        assert_eq!(m.answers.len(), 1);
+        assert!(matches!(m.answers[0].data(), Some(RData::SRV(s)) if s.target().to_ascii() == "pg-0.hl.default.svc.cluster.local."));
     }
 
     #[tokio::test]
     async fn nxdomain_and_nodata() {
         let k = k8s();
         let m = q(&k, "nope.default.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&k, "web.nons.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&k, "default.svc.cluster.local.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert!(m.answers().is_empty());
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert!(m.answers.is_empty());
         let m = q(&k, "cluster.local.", RecordType::SOA).await;
-        assert_eq!(m.answers()[0].record_type(), RecordType::SOA);
+        assert_eq!(m.answers[0].record_type(), RecordType::SOA);
     }
 
     #[tokio::test]
     async fn pods_and_ptr() {
         let k = k8s();
         let m = q(&k, "10-244-1-9.default.pod.cluster.local.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         let m = q(&k, "10-244-1-99.default.pod.cluster.local.", RecordType::A).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain, "verified mode rejects unknown pod IPs");
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain, "verified mode rejects unknown pod IPs");
         let m = q(&k, "10.0.96.10.in-addr.arpa.", RecordType::PTR).await;
-        assert!(matches!(m.answers()[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "web.default.svc.cluster.local."));
+        assert!(matches!(m.answers[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "web.default.svc.cluster.local."));
         let m = q(&k, "5.0.244.10.in-addr.arpa.", RecordType::PTR).await;
-        assert!(matches!(m.answers()[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "pg-0.hl.default.svc.cluster.local."));
+        assert!(matches!(m.answers[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "pg-0.hl.default.svc.cluster.local."));
     }
 
     #[tokio::test]
     async fn external_name() {
         let k = k8s();
         let m = q(&k, "ext.default.svc.cluster.local.", RecordType::CNAME).await;
-        assert!(matches!(m.answers()[0].data(), Some(RData::CNAME(c)) if c.0.to_ascii() == "example.org."));
+        assert!(matches!(m.answers[0].data(), Some(RData::CNAME(c)) if c.0.to_ascii() == "example.org."));
     }
 
     #[test]

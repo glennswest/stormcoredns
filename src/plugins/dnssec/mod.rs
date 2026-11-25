@@ -200,11 +200,11 @@ impl Dnssec {
             let mut set: Vec<Record> = self.keys.iter().map(|k| k.dnskey_record(&apex, 3600)).collect();
             let sigs = self.sign_set(&set, zone, &server, now);
             set.extend(sigs);
-            m.set_response_code(ResponseCode::NoError);
-            m.take_answers();
-            m.take_name_servers();
+            m.metadata.response_code = ResponseCode::NoError;
+            m.answers.clear();
+            m.authorities.clear();
             m.insert_answers(set);
-            m.set_authoritative(true);
+            m.metadata.authoritative = true;
             return;
         }
         let kind = typify(m);
@@ -212,17 +212,17 @@ impl Dnssec {
             // referral: sign the DS set, or deny it with an NSEC; the NS set
             // and glue are not ours to sign
             RespType::Delegation => {
-                let ttl = m.name_servers().first().map(|r| r.ttl()).unwrap_or(3600);
-                let ds: Vec<Record> = m.name_servers().iter().filter(|r| r.record_type() == RecordType::DS).cloned().collect();
+                let ttl = m.authorities.first().map(|r| r.ttl()).unwrap_or(3600);
+                let ds: Vec<Record> = m.authorities.iter().filter(|r| r.record_type() == RecordType::DS).cloned().collect();
                 let add = if ds.is_empty() { self.nsec(req, zone, kind, ttl, &server, now) } else { self.sign_set(&ds, zone, &server, now) };
                 for r in add {
-                    m.add_name_server(r);
+                    m.add_authority(r);
                 }
             }
             // NXDOMAIN/NODATA: only the plain "one SOA in authority" shape is
             // signed; the black lie turns it into NOERROR
             RespType::NameError | RespType::NoError => {
-                let ns = m.name_servers();
+                let ns = &m.authorities;
                 if ns.len() != 1 || ns[0].record_type() != RecordType::SOA {
                     return;
                 }
@@ -231,22 +231,22 @@ impl Dnssec {
                 let mut auth = vec![soa.clone()];
                 auth.extend(self.sign_set(&[soa], zone, &server, now));
                 let nsec = self.nsec(req, zone, kind, ttl, &server, now);
-                m.set_response_code(ResponseCode::NoError);
-                m.take_name_servers();
+                m.metadata.response_code = ResponseCode::NoError;
+                m.authorities.clear();
                 if req.qtype() == RecordType::NSEC {
                     // the NSEC is the answer; no SOA
                     m.insert_answers(nsec);
                 } else {
                     auth.extend(nsec);
-                    m.insert_name_servers(auth);
+                    m.insert_authorities(auth);
                 }
             }
             RespType::Success => {
-                let answers = sign_section(self, m.take_answers(), zone, &server, now);
+                let answers = sign_section(self, std::mem::take(&mut m.answers), zone, &server, now);
                 m.insert_answers(answers);
-                let auth = sign_section(self, m.take_name_servers(), zone, &server, now);
-                m.insert_name_servers(auth);
-                let extra = sign_section(self, m.take_additionals(), zone, &server, now);
+                let auth = sign_section(self, std::mem::take(&mut m.authorities), zone, &server, now);
+                m.insert_authorities(auth);
+                let extra = sign_section(self, std::mem::take(&mut m.additionals), zone, &server, now);
                 m.insert_additionals(extra);
             }
             _ => {}
@@ -289,7 +289,7 @@ impl Handler for Dnssec {
         }
         let mut r = next.serve(req).await?;
         if let Some(m) = r.msg_mut() {
-            if matches!(m.response_code(), ResponseCode::NoError | ResponseCode::NXDomain) {
+            if matches!(m.metadata.response_code, ResponseCode::NoError | ResponseCode::NXDomain) {
                 self.sign_response(req, &zone, m);
             }
         }
@@ -366,19 +366,19 @@ mod tests {
             let soa = Record::from_rdata(apex.clone(), 300, RData::SOA(SOA::new(Name::from_ascii("ns.example.org.").unwrap(), Name::from_ascii("h.example.org.").unwrap(), 1, 2, 3, 4, 300)));
             if n.starts_with("nx.") || n.starts_with("nodata.") {
                 if n.starts_with("nx.") {
-                    m.set_response_code(ResponseCode::NXDomain);
+                    m.metadata.response_code = ResponseCode::NXDomain;
                 }
-                m.set_authoritative(true);
-                m.add_name_server(soa);
+                m.metadata.authoritative = true;
+                m.add_authority(soa);
             } else if n.starts_with("sub.") || n.starts_with("ds.") {
                 let cut = Name::from_ascii(&n).unwrap();
-                m.add_name_server(Record::from_rdata(cut.clone(), 3600, RData::NS(NS(Name::from_ascii("ns.other.net.").unwrap()))));
+                m.add_authority(Record::from_rdata(cut.clone(), 3600, RData::NS(NS(Name::from_ascii("ns.other.net.").unwrap()))));
                 if n.starts_with("ds.") {
                     let ds = DsRdata::new(12345, hickory_proto::rr::dnssec::Algorithm::ECDSAP256SHA256, hickory_proto::rr::dnssec::DigestType::SHA256, vec![1; 32]);
-                    m.add_name_server(Record::from_rdata(cut, 3600, RData::DNSSEC(DNSSECRData::DS(ds))));
+                    m.add_authority(Record::from_rdata(cut, 3600, RData::DNSSEC(DNSSECRData::DS(ds))));
                 }
             } else {
-                m.set_authoritative(true);
+                m.metadata.authoritative = true;
                 m.add_answer(Record::from_rdata(req.qname(), 30, RData::A(A::new(10, 0, 0, 1))));
             }
             Ok(Reply::Msg(m))
@@ -393,7 +393,7 @@ mod tests {
     async fn q(d: &Arc<Dnssec>, name: &str, t: RecordType) -> Message {
         let chain: Vec<Arc<dyn Handler>> = vec![d.clone(), Arc::new(Static)];
         let mut req = Request::for_test(name, t);
-        req.msg.extensions_mut().get_or_insert_with(hickory_proto::op::Edns::new).set_dnssec_ok(true);
+        req.msg.edns.get_or_insert_with(hickory_proto::op::Edns::new).set_dnssec_ok(true);
         Next::new(&chain).serve(&mut req).await.unwrap().into_msg().unwrap()
     }
 
@@ -419,12 +419,12 @@ mod tests {
     async fn signs_positive_answers() {
         let d = dnssec();
         let m = q(&d, "www.example.org.", RecordType::A).await;
-        assert_eq!(m.answers().len(), 2);
-        assert_eq!(m.answers()[1].record_type(), RecordType::RRSIG);
+        assert_eq!(m.answers.len(), 2);
+        assert_eq!(m.answers[1].record_type(), RecordType::RRSIG);
         let mut req = Request::for_test("example.org.", RecordType::DNSKEY);
         let chain: Vec<Arc<dyn Handler>> = vec![d.clone(), Arc::new(Static)];
         let m = Next::new(&chain).serve(&mut req).await.unwrap().into_msg().unwrap();
-        assert_eq!(m.answers()[0].record_type(), RecordType::DNSKEY);
+        assert_eq!(m.answers[0].record_type(), RecordType::DNSKEY);
     }
 
     #[tokio::test]
@@ -432,19 +432,19 @@ mod tests {
         let d = dnssec();
         for name in ["nx.example.org.", "nodata.example.org."] {
             let m = q(&d, name, RecordType::A).await;
-            assert_eq!(m.response_code(), ResponseCode::NoError, "{}: black lie", name);
-            let (r, n) = nsec_of(m.name_servers());
+            assert_eq!(m.metadata.response_code, ResponseCode::NoError, "{}: black lie", name);
+            let (r, n) = nsec_of(&m.authorities);
             assert!(!n.type_bit_maps().contains(&RecordType::A), "{}: A must not be claimed", name);
             assert!(n.type_bit_maps().contains(&RecordType::AAAA) && n.type_bit_maps().contains(&RecordType::NSEC));
             assert_eq!(r.ttl(), 300, "NSEC TTL from the SOA");
             assert_eq!(n.next_domain_name().to_ascii(), format!("\\000.{}", name));
-            let c = covered(m.name_servers());
+            let c = covered(&m.authorities);
             assert!(c.contains(&RecordType::SOA) && c.contains(&RecordType::NSEC));
         }
         // a query for NSEC: the NSEC is the answer, the bitmap keeps NSEC
         let m = q(&d, "nx.example.org.", RecordType::NSEC).await;
-        assert!(m.name_servers().is_empty());
-        let (_, n) = nsec_of(m.answers());
+        assert!(m.authorities.is_empty());
+        let (_, n) = nsec_of(&m.answers);
         assert!(n.type_bit_maps().contains(&RecordType::NSEC));
     }
 
@@ -452,13 +452,13 @@ mod tests {
     async fn referrals_sign_ds_only() {
         let d = dnssec();
         let m = q(&d, "sub.example.org.", RecordType::A).await;
-        assert!(!covered(m.name_servers()).contains(&RecordType::NS), "the NS set is not signed");
-        let (_, n) = nsec_of(m.name_servers());
+        assert!(!covered(&m.authorities).contains(&RecordType::NS), "the NS set is not signed");
+        let (_, n) = nsec_of(&m.authorities);
         assert_eq!(n.type_bit_maps(), delegation_bitmap().as_slice());
         assert_eq!(n.next_domain_name().to_ascii(), "sub\\000.example.org.");
         let m = q(&d, "ds.example.org.", RecordType::A).await;
-        assert_eq!(covered(m.name_servers()), vec![RecordType::DS]);
-        assert!(!m.name_servers().iter().any(|r| r.record_type() == RecordType::NSEC));
+        assert_eq!(covered(&m.authorities), vec![RecordType::DS]);
+        assert!(!m.authorities.iter().any(|r| r.record_type() == RecordType::NSEC));
     }
 
     /// Every RRSIG in the reply validates with the zone's DNSKEY over the
@@ -468,7 +468,7 @@ mod tests {
         use hickory_proto::rr::dnssec::Verifier;
         let key = &d.keys[0].dnskey;
         let mut n = 0;
-        for sec in [m.answers(), m.name_servers(), m.additionals()] {
+        for sec in [&m.answers, &m.authorities, &m.additionals] {
             for r in sec {
                 let Some(RData::DNSSEC(DNSSECRData::RRSIG(sig))) = r.data() else { continue };
                 let set: Vec<Record> = sec.iter().filter(|x| x.name() == r.name() && x.record_type() == sig.type_covered()).cloned().collect();

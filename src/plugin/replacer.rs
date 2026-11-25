@@ -63,30 +63,30 @@ impl Replacer {
 }
 
 fn flags(m: &Message) -> String {
-    let h = m.header();
+    let h = &m.metadata;
     let mut f = Vec::new();
-    if h.message_type() == hickory_proto::op::MessageType::Response {
+    if h.message_type == hickory_proto::op::MessageType::Response {
         f.push("qr");
     }
-    if h.authoritative() {
+    if h.authoritative {
         f.push("aa");
     }
-    if h.truncated() {
+    if h.truncation {
         f.push("tc");
     }
-    if h.recursion_desired() {
+    if h.recursion_desired {
         f.push("rd");
     }
-    if h.recursion_available() {
+    if h.recursion_available {
         f.push("ra");
     }
-    if h.authentic_data() {
+    if h.authentic_data {
         f.push("ad");
     }
-    if h.checking_disabled() {
+    if h.checking_disabled {
         f.push("cd");
     }
-    if m.edns().map(|e| e.dnssec_ok()).unwrap_or(false) {
+    if m.edns.as_ref().map(|e| e.flags().dnssec_ok).unwrap_or(false) {
         f.push("do");
     }
     f.join(",")
@@ -106,15 +106,15 @@ fn placeholder(k: &str, req: &Request, reply: Option<&Reply>, err_rcode: Option<
         "local_port" => req.local_port().to_string(),
         "when" => chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "rcode" => match (msg, reply, err_rcode) {
-            (Some(m), _, _) => rcode_str(m.response_code()),
+            (Some(m), _, _) => rcode_str(m.metadata.response_code),
             (None, Some(r), _) => rcode_str(r.rcode()),
             (None, None, Some(rc)) => rcode_str(rc),
             _ => COMMON_LOG_EMPTY.into(),
         },
         "rsize" => msg.map(|m| m.to_vec().map(|v| v.len()).unwrap_or(0).to_string()).unwrap_or_else(|| COMMON_LOG_EMPTY.into()),
         "duration" => format_duration(req.start.elapsed()),
-        ">id" => req.msg.id().to_string(),
-        ">opcode" => opcode_str(req.msg.op_code()),
+        ">id" => req.msg.metadata.id.to_string(),
+        ">opcode" => opcode_str(req.msg.metadata.op_code),
         ">do" => req.do_bit().to_string(),
         ">bufsize" => req.size().to_string(),
         ">rflags" => msg.map(flags).unwrap_or_else(|| COMMON_LOG_EMPTY.into()),

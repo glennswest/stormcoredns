@@ -71,17 +71,17 @@ impl Handler for Dns64 {
         let Some(m) = r.msg_mut() else { return Ok(r) };
         // RFC 6147 5.1.2: NXDOMAIN is returned unchanged; any other error
         // counts as an empty answer (as in CoreDNS)
-        if m.response_code() == ResponseCode::NXDomain {
+        if m.metadata.response_code == ResponseCode::NXDomain {
             return Ok(r);
         }
-        let has_aaaa = m.answers().iter().any(|a| a.record_type() == RecordType::AAAA);
+        let has_aaaa = m.answers.iter().any(|a| a.record_type() == RecordType::AAAA);
         if has_aaaa && !self.translate_all {
             return Ok(r);
         }
         // fetch the A records through our own chain
         let Ok(a_resp) = crate::server::self_lookup(req, req.qname(), RecordType::A).await else { return Ok(r) };
         let ttl_cap = m
-            .name_servers()
+            .authorities
             .iter()
             .find_map(|rr| match rr.data() {
                 Some(RData::SOA(s)) => Some(rr.ttl().min(s.minimum())),
@@ -89,7 +89,7 @@ impl Handler for Dns64 {
             })
             .unwrap_or(u32::MAX);
         let mut synthesized = Vec::new();
-        for a in a_resp.answers() {
+        for a in a_resp.answers {
             match a.data() {
                 Some(RData::A(v4)) => {
                     let ttl = a.ttl().min(ttl_cap);
@@ -103,11 +103,11 @@ impl Handler for Dns64 {
             return Ok(r);
         }
         REQUESTS.with_label_values(&[&req.server]).inc();
-        let mut answers: Vec<Record> = if self.translate_all { m.take_answers().into_iter().filter(|x| x.record_type() != RecordType::AAAA).collect() } else { Vec::new() };
+        let mut answers: Vec<Record> = if self.translate_all { std::mem::take(&mut m.answers).into_iter().filter(|x| x.record_type() != RecordType::AAAA).collect() } else { Vec::new() };
         answers.extend(synthesized);
-        m.set_response_code(ResponseCode::NoError);
-        m.take_answers();
-        m.take_name_servers();
+        m.metadata.response_code = ResponseCode::NoError;
+        m.answers.clear();
+        m.authorities.clear();
         m.insert_answers(answers);
         Ok(r)
     }

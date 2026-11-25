@@ -374,7 +374,7 @@ pub fn dedup(records: Vec<Record>) -> Vec<Record> {
 pub fn minimal_ttl(m: &Message, negative: bool) -> Duration {
     let mut min = u32::MAX;
     let mut found = false;
-    for r in m.answers().iter().chain(m.name_servers()).chain(m.additionals()) {
+    for r in m.answers.iter().chain(&m.authorities).chain(&m.additionals) {
         if r.record_type() == RecordType::OPT {
             continue;
         }
@@ -397,24 +397,24 @@ pub fn minimal_ttl(m: &Message, negative: bool) -> Duration {
 
 /// True if the message has an OPT record.
 pub fn has_opt(m: &Message) -> bool {
-    m.edns().is_some()
+    m.edns.is_some()
 }
 
 /// Make an rcode-only error reply for `req` (server-side, no plugin).
 pub fn error_reply(req: &Message, rcode: ResponseCode) -> Message {
-    let mut m = Message::new();
-    m.set_id(req.id());
-    m.set_message_type(hickory_proto::op::MessageType::Response);
-    m.set_op_code(req.op_code());
-    m.set_recursion_desired(req.recursion_desired());
-    m.set_response_code(rcode);
-    if let Some(q) = req.queries().first() {
+    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+    m.metadata.id = req.metadata.id;
+    m.metadata.message_type = hickory_proto::op::MessageType::Response;
+    m.metadata.op_code = req.op_code();
+    m.metadata.recursion_desired = req.metadata.recursion_desired;
+    m.metadata.response_code = rcode;
+    if let Some(q) = req.queries.first() {
         m.add_query(q.clone());
     }
-    if let Some(e) = req.edns() {
+    if let Some(e) = req.edns.as_ref() {
         let mut ne = hickory_proto::op::Edns::new();
         ne.set_max_payload(UDP_BUFFER_SIZE);
-        ne.set_dnssec_ok(e.dnssec_ok());
+        ne.set_dnssec_ok(e.flags().dnssec_ok);
         m.set_edns(ne);
     }
     m

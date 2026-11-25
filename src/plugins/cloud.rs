@@ -83,7 +83,7 @@ impl CloudZones {
         match zone {
             Some(zone) => {
                 let m = zone.lookup(req, true).await;
-                if m.response_code() == hickory_proto::op::ResponseCode::NXDomain {
+                if m.metadata.response_code == hickory_proto::op::ResponseCode::NXDomain {
                     if let Some(ft) = &self.fallthrough {
                         if crate::plugin::zones_match(ft, &qname).is_some() {
                             return next.serve(req).await;
@@ -94,7 +94,7 @@ impl CloudZones {
             }
             None => {
                 let mut m = req.new_reply();
-                m.set_response_code(hickory_proto::op::ResponseCode::ServFail);
+                m.metadata.response_code = hickory_proto::op::ResponseCode::ServFail;
                 Ok(Reply::Msg(m))
             }
         }

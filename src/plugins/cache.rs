@@ -67,19 +67,19 @@ pub enum RespType {
 }
 
 pub fn typify(m: &Message) -> RespType {
-    if m.op_code() != OpCode::Query {
+    if m.metadata.op_code != OpCode::Query {
         return RespType::Meta;
     }
-    match m.response_code() {
+    match m.metadata.response_code {
         ResponseCode::NoError => {
-            if !m.answers().is_empty() {
+            if !m.answers.is_empty() {
                 return RespType::Success;
             }
-            let has_soa = m.name_servers().iter().any(|r| r.record_type() == RecordType::SOA);
-            let has_ns = m.name_servers().iter().any(|r| r.record_type() == RecordType::NS);
+            let has_soa = m.authorities.iter().any(|r| r.record_type() == RecordType::SOA);
+            let has_ns = m.authorities.iter().any(|r| r.record_type() == RecordType::NS);
             if has_soa {
                 RespType::NoError
-            } else if has_ns && !m.authoritative() {
+            } else if has_ns && !m.metadata.authoritative {
                 RespType::Delegation
             } else {
                 RespType::NoError
@@ -109,13 +109,13 @@ impl Item {
     /// `keepttl`), re-addressed to `req`.
     fn to_msg(&self, req: &Request, now: Instant, keepttl: bool) -> Message {
         let mut m = self.msg.clone();
-        m.set_id(req.msg.id());
+        m.metadata.id = req.msg.metadata.id;
         // the question as the client sent it (its case), as `SetReply` does
-        m.take_queries();
-        m.add_queries(req.msg.queries().iter().cloned());
+        m.queries.clear();
+        m.add_queries(req.msg.queries.iter().cloned());
         // mirror the query's RD/CD flags
-        m.set_recursion_desired(req.msg.recursion_desired());
-        m.set_checking_disabled(req.msg.checking_disabled());
+        m.metadata.recursion_desired = req.msg.metadata.recursion_desired;
+        m.metadata.checking_disabled = req.msg.metadata.checking_disabled;
         if !keepttl {
             let age = now.duration_since(self.stored).as_secs() as u32;
             let adjust = |r: &mut hickory_proto::rr::Record| {
@@ -123,21 +123,21 @@ impl Item {
                     r.set_ttl(r.ttl().saturating_sub(age));
                 }
             };
-            let mut a = m.take_answers();
+            let mut a = std::mem::take(&mut m.answers);
             a.iter_mut().for_each(adjust);
             m.insert_answers(a);
-            let mut n = m.take_name_servers();
+            let mut n = std::mem::take(&mut m.authorities);
             n.iter_mut().for_each(adjust);
-            m.insert_name_servers(n);
-            let mut x = m.take_additionals();
+            m.insert_authorities(n);
+            let mut x = std::mem::take(&mut m.additionals);
             x.iter_mut().for_each(adjust);
             m.insert_additionals(x);
         }
         // EDNS: answer with OPT only if the client sent one
-        if req.msg.edns().is_some() {
+        if req.msg.edns.is_some() {
             req.set_edns0(&mut m);
         } else {
-            *m.extensions_mut() = None;
+            *m.edns = None;
         }
         m
     }
@@ -213,17 +213,17 @@ pub fn key(name: &str, qtype: RecordType, qclass: DNSClass, rd: bool, do_bit: bo
 
 /// The cache key of a request.
 pub fn req_key(req: &Request, name: &str) -> u64 {
-    key(name, req.qtype(), req.qclass(), req.msg.recursion_desired(), req.do_bit(), req.msg.checking_disabled())
+    key(name, req.qtype(), req.qclass(), req.msg.metadata.recursion_desired, req.do_bit(), req.msg.metadata.checking_disabled)
 }
 
 impl Cache {
     fn cacheable(&self, req: &Request) -> bool {
-        req.msg.op_code() == OpCode::Query && req.msg.queries().len() == 1 && req.qtype() != RecordType::ZERO
+        req.msg.metadata.op_code == OpCode::Query && req.msg.queries.len() == 1 && req.qtype() != RecordType::ZERO
     }
 
     /// Store a response if it is cacheable, returning the TTL used.
     fn insert(&self, req: &Request, m: &Message, name: &str, server: &str, view: &str) -> Option<Duration> {
-        if m.truncated() {
+        if m.metadata.truncation {
             return None;
         }
         let rtype = typify(m);
@@ -233,8 +233,8 @@ impl Cache {
         if !qname.ends_with('.') {
             qname.push('.');
         }
-        let same_question = m.queries().len() == 1
-            && m.queries().first().is_some_and(|q| {
+        let same_question = m.queries.len() == 1
+            && m.queries.first().is_some_and(|q| {
                 let mut n = q.name().to_ascii().to_ascii_lowercase();
                 if !n.ends_with('.') {
                     n.push('.');
@@ -254,7 +254,7 @@ impl Cache {
                     }
                 }
                 let mut ttl = crate::dnsutil::minimal_ttl(m, false);
-                if m.answers().is_empty() && m.name_servers().is_empty() {
+                if m.answers.is_empty() && m.authorities.is_empty() {
                     ttl = self.minpttl;
                 }
                 (&self.pcache, ttl.clamp(self.minpttl, self.pttl))
@@ -266,7 +266,7 @@ impl Cache {
                     }
                 }
                 let mut ttl = crate::dnsutil::minimal_ttl(m, true);
-                if m.name_servers().is_empty() && m.answers().is_empty() {
+                if m.authorities.is_empty() && m.answers.is_empty() {
                     ttl = self.minnttl;
                 }
                 (&self.ncache, ttl.clamp(self.minnttl, self.nttl))
@@ -281,7 +281,7 @@ impl Cache {
         };
         let mut stored = m.clone();
         // normalise: strip OPT, we add our own on the way out
-        *stored.extensions_mut() = None;
+        *stored.edns = None;
         let _ = rtype;
         let item = Item { msg: stored, stored: Instant::now(), ttl: ttl.as_secs() as u32, fetches: 0, window_start: Instant::now() };
         let shard = store.shard(k);
@@ -333,13 +333,13 @@ impl Cache {
                             r.set_ttl(0);
                         }
                     };
-                    let mut a = m.take_answers();
+                    let mut a = std::mem::take(&mut m.answers);
                     a.iter_mut().for_each(zero);
                     m.insert_answers(a);
-                    let mut n = m.take_name_servers();
+                    let mut n = std::mem::take(&mut m.authorities);
                     n.iter_mut().for_each(zero);
-                    m.insert_name_servers(n);
-                    let mut x = m.take_additionals();
+                    m.insert_authorities(n);
+                    let mut x = std::mem::take(&mut m.additionals);
                     x.iter_mut().for_each(zero);
                     m.insert_additionals(x);
                 }
@@ -356,12 +356,12 @@ impl Cache {
         }
         let mut r2 = req.new_with_question(req.qname(), req.qtype());
         // the same question, class included, so the answer lands under `k`
-        r2.msg.take_queries();
-        r2.msg.add_queries(req.msg.queries().iter().cloned());
-        r2.msg.set_checking_disabled(req.msg.checking_disabled());
-        r2.msg.set_recursion_desired(req.msg.recursion_desired());
+        r2.msg.queries.clear();
+        r2.msg.add_queries(req.msg.queries.iter().cloned());
+        r2.msg.metadata.checking_disabled = req.msg.metadata.checking_disabled;
+        r2.msg.metadata.recursion_desired = req.msg.metadata.recursion_desired;
         if req.do_bit() {
-            r2.msg.edns_mut().set_dnssec_ok(true);
+            r2.msg.edns.get_or_insert_with(hickory_proto::op::Edns::new).set_dnssec_ok(true);
         }
         let cache = self.clone();
         let server = req.server.clone();
@@ -404,7 +404,7 @@ impl Handler for CacheHandler {
                     RefreshMode::Verify => {
                         // try upstream first; fall back to the stale answer
                         match next.serve(req).await {
-                            Ok(Reply::Msg(fresh)) if fresh.response_code() != ResponseCode::ServFail => {
+                            Ok(Reply::Msg(fresh)) if fresh.metadata.response_code != ResponseCode::ServFail => {
                                 c.insert(req, &fresh, &name, &server, &view);
                                 return Ok(Reply::Msg(fresh));
                             }
@@ -638,12 +638,12 @@ mod tests {
         let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), Arc::new(Static(300))];
         let mut r1 = Request::for_test("example.org.", RecordType::A);
         let m1 = Next::new(&chain).serve(&mut r1).await.unwrap().into_msg().unwrap();
-        assert_eq!(m1.answers()[0].ttl(), 300);
+        assert_eq!(m1.answers[0].ttl(), 300);
         assert_eq!(c.pcache.len(), 1);
         let mut r2 = Request::for_test("EXAMPLE.org.", RecordType::A);
         let m2 = Next::new(&chain).serve(&mut r2).await.unwrap().into_msg().unwrap();
-        assert_eq!(m2.id(), r2.msg.id());
-        assert_eq!(m2.answers()[0].ttl(), 300);
+        assert_eq!(m2.metadata.id, r2.msg.metadata.id);
+        assert_eq!(m2.answers[0].ttl(), 300);
     }
 
     /// Answers with the query's own question, counting calls. `nx` switches
@@ -671,12 +671,12 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut m = req.new_reply();
             if self.wrong_type.load(Ordering::SeqCst) {
-                let mut q = m.take_queries();
+                let mut q = std::mem::take(&mut m.queries);
                 q[0].set_query_type(RecordType::AAAA);
                 m.add_queries(q);
             }
             if self.nx.load(Ordering::SeqCst) {
-                m.set_response_code(ResponseCode::NXDomain);
+                m.metadata.response_code = ResponseCode::NXDomain;
             } else {
                 let mut r = Record::from_rdata(req.qname(), self.ttl, RData::A(A::new(10, 0, 0, 1)));
                 r.set_dns_class(req.qclass());
@@ -692,7 +692,7 @@ mod tests {
 
     fn with_class(name: &str, class: DNSClass) -> Request {
         let mut r = Request::for_test(name, RecordType::A);
-        let mut q = r.msg.take_queries();
+        let mut q = std::mem::take(&mut r.msg.queries);
         q[0].set_query_class(class);
         r.msg.add_queries(q);
         r
@@ -706,35 +706,35 @@ mod tests {
         let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), up.clone()];
 
         let m = ask(&chain, with_class("example.org.", DNSClass::IN)).await;
-        assert_eq!(m.queries()[0].query_class(), DNSClass::IN);
+        assert_eq!(m.queries[0].query_class(), DNSClass::IN);
         assert_eq!(up.calls(), 1);
         // a CH query is not answered with the cached IN answer
         let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
         assert_eq!(up.calls(), 2);
-        assert_eq!(m.queries()[0].query_class(), DNSClass::CH);
-        assert_eq!(m.answers()[0].dns_class(), DNSClass::CH);
+        assert_eq!(m.queries[0].query_class(), DNSClass::CH);
+        assert_eq!(m.answers[0].dns_class(), DNSClass::CH);
         // each class now hits its own entry
         let m = ask(&chain, with_class("example.org.", DNSClass::IN)).await;
-        assert_eq!(m.answers()[0].dns_class(), DNSClass::IN);
+        assert_eq!(m.answers[0].dns_class(), DNSClass::IN);
         let m = ask(&chain, with_class("example.org.", DNSClass::CH)).await;
-        assert_eq!(m.answers()[0].dns_class(), DNSClass::CH);
+        assert_eq!(m.answers[0].dns_class(), DNSClass::CH);
         assert_eq!(up.calls(), 2);
 
         // RD=0 does not share the RD=1 entry
         let mut r = Request::for_test("example.org.", RecordType::A);
-        r.msg.set_recursion_desired(false);
+        r.msg.metadata.recursion_desired = false;
         let m = ask(&chain, r).await;
         assert_eq!(up.calls(), 3);
-        assert!(!m.recursion_desired());
+        assert!(!m.metadata.recursion_desired);
         let mut r = Request::for_test("example.org.", RecordType::A);
-        r.msg.set_recursion_desired(false);
+        r.msg.metadata.recursion_desired = false;
         ask(&chain, r).await;
         assert_eq!(up.calls(), 3);
 
         // a hit carries the client's question, in the client's case
         let m = ask(&chain, Request::for_test("ExAmPlE.org.", RecordType::A)).await;
         assert_eq!(up.calls(), 3);
-        assert_eq!(m.queries()[0].name().to_ascii(), "ExAmPlE.org.");
+        assert_eq!(m.queries[0].name().to_ascii(), "ExAmPlE.org.");
     }
 
     // finding 0c1633c2a684: validate the full question before storing
@@ -762,12 +762,12 @@ mod tests {
         let chain: Vec<Arc<dyn Handler>> = vec![Arc::new(CacheHandler(c.clone())), up.clone()];
 
         let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         // the name is deleted upstream; the stale answer is served once and
         // refreshed in the background
         up.nx.store(true, Ordering::SeqCst);
         let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.answers.len(), 1);
         for _ in 0..200 {
             if up.calls() == 2 && c.inflight.is_empty() {
                 break;
@@ -779,7 +779,7 @@ mod tests {
         assert_eq!(c.ncache.len(), 1);
         // from now on the denial answers, from the cache
         let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
-        assert_eq!(m.response_code(), ResponseCode::NXDomain);
+        assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         assert_eq!(up.calls(), 2);
 
         // and the reverse: a positive answer replaces a cached denial
@@ -792,19 +792,19 @@ mod tests {
         c.insert(&r, &fresh, &name, "", "");
         assert!(c.ncache.shard(k).map.lock().peek(&k).is_none());
         let m = ask(&chain, Request::for_test("gone.example.org.", RecordType::A)).await;
-        assert_eq!(m.response_code(), ResponseCode::NoError);
-        assert_eq!(m.answers().len(), 1);
+        assert_eq!(m.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(m.answers.len(), 1);
     }
 
     #[test]
     fn typify_cases() {
-        let mut m = Message::new();
-        m.set_response_code(ResponseCode::NXDomain);
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.response_code = ResponseCode::NXDomain;
         assert_eq!(typify(&m), RespType::NameError);
-        let mut m = Message::new();
-        m.set_response_code(ResponseCode::ServFail);
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        m.metadata.response_code = ResponseCode::ServFail;
         assert_eq!(typify(&m), RespType::OtherError);
-        let mut m = Message::new();
+        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
         m.add_answer(Record::from_rdata(Name::root(), 1, RData::A(A::new(1, 1, 1, 1))));
         assert_eq!(typify(&m), RespType::Success);
     }

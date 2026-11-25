@@ -40,10 +40,10 @@ pub enum Reply {
 impl Reply {
     pub fn rcode(&self) -> ResponseCode {
         match self {
-            Reply::Msg(m) => m.response_code(),
+            Reply::Msg(m) => m.metadata.response_code,
             Reply::Rcode(r) => *r,
             Reply::Drop => ResponseCode::NoError,
-            Reply::Multi(v) => v.first().map(|m| m.response_code()).unwrap_or(ResponseCode::NoError),
+            Reply::Multi(v) => v.first().map(|m| m.metadata.response_code).unwrap_or(ResponseCode::NoError),
         }
     }
     pub fn msg(&self) -> Option<&Message> {

@@ -173,7 +173,7 @@ impl Etcd {
         let qtype = req.qtype();
         let name = req.qname();
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         if qname == zone {
             match qtype {
                 RecordType::SOA | RecordType::ANY => m.add_answer(self.soa(zone)),
@@ -191,12 +191,12 @@ impl Etcd {
                             m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::NS(NS(t))));
                         }
                     }
-                    if m.answers().is_empty() {
-                        m.add_name_server(self.soa(zone));
+                    if m.answers.is_empty() {
+                        m.add_authority(self.soa(zone));
                     }
                     &mut m
                 }
-                _ => m.add_name_server(self.soa(zone)),
+                _ => m.add_authority(self.soa(zone)),
             };
             return Ok(Some(m));
         }
@@ -215,7 +215,7 @@ impl Etcd {
                             m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::CNAME(CNAME(target.clone()))));
                             if qtype != RecordType::ANY {
                                 if let Ok(r) = crate::server::self_lookup(req, target, qtype).await {
-                                    for a in r.answers() {
+                                    for a in &r.answers {
                                         m.add_answer(a.clone());
                                     }
                                 }
@@ -286,8 +286,8 @@ impl Etcd {
             }
             _ => {}
         }
-        if m.answers().is_empty() {
-            m.add_name_server(self.soa(zone));
+        if m.answers.is_empty() {
+            m.add_authority(self.soa(zone));
         }
         Ok(Some(m))
     }
@@ -313,9 +313,9 @@ impl Handler for Etcd {
                     }
                 }
                 let mut m = req.new_reply();
-                m.set_authoritative(true);
-                m.set_response_code(ResponseCode::NXDomain);
-                m.add_name_server(self.soa(&zone));
+                m.metadata.authoritative = true;
+                m.metadata.response_code = ResponseCode::NXDomain;
+                m.add_authority(self.soa(&zone));
                 Ok(Reply::Msg(m))
             }
             Err(e) => Err(error("etcd", e)),

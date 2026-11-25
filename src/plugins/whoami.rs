@@ -18,7 +18,7 @@ impl Handler for Whoami {
 
     async fn serve_dns(&self, req: &mut Request, _next: Next<'_>) -> DnsResult {
         let mut m = req.new_reply();
-        m.set_authoritative(true);
+        m.metadata.authoritative = true;
         let qname = req.qname();
         let ip = req.ip();
         let rr = match ip {
@@ -62,10 +62,10 @@ mod tests {
         let mut req = Request::for_test("example.org.", RecordType::A);
         let r = Whoami.serve_dns(&mut req, Next::new(&[])).await.unwrap();
         let m = r.into_msg().unwrap();
-        assert_eq!(m.additionals().len(), 2);
-        assert!(matches!(m.additionals()[0].data(), Some(RData::A(_))));
-        assert_eq!(m.additionals()[1].name().to_ascii(), "_udp.example.org.");
-        match m.additionals()[1].data() {
+        assert_eq!(m.additionals.len(), 2);
+        assert!(matches!(m.additionals[0].data(), Some(RData::A(_))));
+        assert_eq!(m.additionals[1].name().to_ascii(), "_udp.example.org.");
+        match m.additionals[1].data() {
             Some(RData::SRV(s)) => {
                 assert_eq!(s.port(), 40000);
                 assert!(s.target().is_root());

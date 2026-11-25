@@ -98,11 +98,11 @@ impl LoadBalance {
     fn balance(&self, qname: &str, m: &mut Message) {
         let first = match &self.policy {
             Policy::RoundRobin => None,
-            Policy::Weighted(w) => weighted_first(&w.read(), qname, m.answers()),
+            Policy::Weighted(w) => weighted_first(&w.read(), qname, &m.answers),
         };
-        let a = m.take_answers();
+        let a = std::mem::take(&mut m.answers);
         m.insert_answers(shuffle_section(a, first.as_ref()));
-        let x = m.take_additionals();
+        let x = std::mem::take(&mut m.additionals);
         m.insert_additionals(shuffle_section(x, None));
     }
 }

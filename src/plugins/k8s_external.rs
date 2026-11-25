@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&e, "_pg._tcp.db.prod.example.com.", RecordType::SRV).await;
         let targets: Vec<String> = m.answers.iter().filter_map(|r| match &r.data {
-            RData::SRV(s) => Some(s.target().to_ascii()),
+            RData::SRV(s) => Some(s.target.to_ascii()),
             _ => None,
         }).collect();
         assert_eq!(targets, vec!["pg-0.db.prod.example.com.", "pg-1.db.prod.example.com."]);

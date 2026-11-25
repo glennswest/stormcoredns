@@ -851,7 +851,7 @@ mod tests {
         let k = k8s();
         let m = q(&k, "_http._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.port() == 80));
+        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.port == 80));
         assert_eq!(m.additionals.len(), 1);
         let m = q(&k, "_nope._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(m.answers[0].name.to_ascii(), "pg-0.hl.default.svc.cluster.local.");
         let m = q(&k, "_db._tcp.hl.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.target().to_ascii() == "pg-0.hl.default.svc.cluster.local."));
+        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.target.to_ascii() == "pg-0.hl.default.svc.cluster.local."));
     }
 
     #[tokio::test]

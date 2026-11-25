@@ -380,7 +380,7 @@ pub fn minimal_ttl(m: &Message, negative: bool) -> Duration {
         }
         if negative {
             if let RData::SOA(soa) = &r.data {
-                let t = r.ttl.min(soa.minimum());
+                let t = r.ttl.min(soa.minimum);
                 return Duration::from_secs(t as u64);
             }
         }
@@ -402,7 +402,7 @@ pub fn has_opt(m: &Message) -> bool {
 
 /// Make an rcode-only error reply for `req` (server-side, no plugin).
 pub fn error_reply(req: &Message, rcode: ResponseCode) -> Message {
-    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
     m.metadata.id = req.metadata.id;
     m.metadata.message_type = hickory_proto::op::MessageType::Response;
     m.metadata.op_code = req.op_code();

@@ -53,7 +53,7 @@ impl Transfer {
 
 fn serial_of(records: &[Record]) -> Option<u32> {
     records.iter().find_map(|r| match &r.data {
-        RData::SOA(soa) => Some(soa.serial()),
+        RData::SOA(soa) => Some(soa.serial),
         _ => None,
     })
 }
@@ -124,7 +124,7 @@ impl Handler for Transfer {
         // IXFR: same serial → just the SOA
         if qtype == RecordType::IXFR {
             let client_serial = req.msg.authorities.iter().find_map(|r| match &r.data {
-                RData::SOA(s) => Some(s.serial()),
+                RData::SOA(s) => Some(s.serial),
                 _ => None,
             });
             if let (Some(cs), Some(ours)) = (client_serial, serial_of(&records)) {

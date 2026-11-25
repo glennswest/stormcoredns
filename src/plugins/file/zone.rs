@@ -117,7 +117,7 @@ impl Zone {
             .and_then(|nd| nd.rrsets.get(&RecordType::SOA))
             .and_then(|v| v.first())
             .and_then(|r| match &r.data {
-                RData::SOA(s) => Some(s.serial()),
+                RData::SOA(s) => Some(s.serial),
                 _ => None,
             })
             .ok_or_else(|| anyhow!("zone {}: no SOA record at the apex", origin))?;
@@ -187,7 +187,7 @@ impl Zone {
             if let Some(soa) = nd.rrsets.get(&RecordType::SOA).and_then(|v| v.first()) {
                 let mut s = soa.clone();
                 if let RData::SOA(d) = &s.data {
-                    let ttl = s.ttl.min(d.minimum());
+                    let ttl = s.ttl.min(d.minimum);
                     s.ttl = ttl;
                 }
                 out.push(s);
@@ -222,8 +222,8 @@ impl Zone {
         for r in records {
             let target = match &r.data {
                 RData::NS(ns) => Some(&ns.0),
-                RData::SRV(srv) => Some(srv.target()),
-                RData::MX(mx) => Some(mx.exchange()),
+                RData::SRV(srv) => Some(&srv.target),
+                RData::MX(mx) => Some(&mx.exchange),
                 _ => None,
             };
             let Some(t) = target else { continue };
@@ -655,7 +655,7 @@ fn rename(records: &mut [Record], owner: Option<&Name>) {
 pub fn dname_target(r: &Record) -> Option<Name> {
     match &r.data {
         RData::Unknown { code, rdata } if *code == DNAME => {
-            let mut d = BinDecoder::new(rdata.anything());
+            let mut d = BinDecoder::new(&rdata.anything);
             Name::read(&mut d).ok()
         }
         _ => None,
@@ -1014,7 +1014,7 @@ dname   IN A    192.0.2.8
         let d: Vec<_> = all.iter().filter(|r| r.record_type() == DNAME).collect();
         assert_eq!(d.len(), 3);
         // round trip through the wire as an unknown type (what secondary sees)
-        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
         for r in &d {
             m.add_answer((*r).clone());
         }

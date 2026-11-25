@@ -111,7 +111,7 @@ impl Server {
                 // FORMERR with the id if we can read one
                 if buf.len() >= 2 {
                     let id = u16::from_be_bytes([buf[0], buf[1]]);
-                    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+                    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
                     m.metadata.id = id;
                     m.metadata.message_type = hickory_proto::op::MessageType::Response;
                     m.metadata.response_code = ResponseCode::FormErr;

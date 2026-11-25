@@ -84,7 +84,7 @@ impl Handler for Dns64 {
             .authorities
             .iter()
             .find_map(|rr| match &rr.data {
-                RData::SOA(s) => Some(rr.ttl.min(s.minimum())),
+                RData::SOA(s) => Some(rr.ttl.min(s.minimum)),
                 _ => None,
             })
             .unwrap_or(u32::MAX);

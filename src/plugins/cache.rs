@@ -798,13 +798,13 @@ mod tests {
 
     #[test]
     fn typify_cases() {
-        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
         m.metadata.response_code = ResponseCode::NXDomain;
         assert_eq!(typify(&m), RespType::NameError);
-        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
         m.metadata.response_code = ResponseCode::ServFail;
         assert_eq!(typify(&m), RespType::OtherError);
-        let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
         m.add_answer(Record::from_rdata(Name::root(), 1, RData::A(A::new(1, 1, 1, 1))));
         assert_eq!(typify(&m), RespType::Success);
     }

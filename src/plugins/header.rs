@@ -38,12 +38,12 @@ impl Flag {
     }
     fn apply(&self, m: &mut Message, v: bool) {
         match self {
-            Flag::Aa => m.set_authoritative(v),
-            Flag::Ra => m.set_recursion_available(v),
-            Flag::Rd => m.set_recursion_desired(v),
-            Flag::Ad => m.set_authentic_data(v),
-            Flag::Cd => m.set_checking_disabled(v),
-            Flag::Tc => m.set_truncated(v),
+            Flag::Aa => m.metadata.authoritative = v,
+            Flag::Ra => m.metadata.recursion_available = v,
+            Flag::Rd => m.metadata.recursion_desired = v,
+            Flag::Ad => m.metadata.authentic_data = v,
+            Flag::Cd => m.metadata.checking_disabled = v,
+            Flag::Tc => m.metadata.truncation = v,
         };
     }
 }

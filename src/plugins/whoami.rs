@@ -67,8 +67,8 @@ mod tests {
         assert_eq!(m.additionals[1].name.to_ascii(), "_udp.example.org.");
         match &m.additionals[1].data {
             RData::SRV(s) => {
-                assert_eq!(s.port(), 40000);
-                assert!(s.target().is_root());
+                assert_eq!(s.port, 40000);
+                assert!(s.target.is_root());
             }
             o => panic!("{:?}", o),
         }

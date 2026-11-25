@@ -54,7 +54,7 @@ impl Signer {
                 RecordType::RRSIG | RecordType::NSEC | RecordType::NSEC3 | RecordType::NSEC3PARAM | RecordType::DNSKEY | RecordType::CDS | RecordType::CDNSKEY => continue,
                 RecordType::SOA => {
                     if let RData::SOA(s) = &r.data {
-                        let soa = hickory_proto::rr::rdata::SOA::new(s.mname().clone(), s.rname().clone(), serial, s.refresh(), s.retry(), s.expire(), s.minimum());
+                        let soa = hickory_proto::rr::rdata::SOA::new(s.mname.clone(), s.rname.clone(), serial, s.refresh, s.retry, s.expire, s.minimum);
                         records.push(Record::from_rdata(r.name.clone(), r.ttl, RData::SOA(soa)));
                     }
                 }
@@ -74,7 +74,7 @@ impl Signer {
         // delegation points only own NS (and DS) from the parent's view
         let names: Vec<Name> = by_name.keys().cloned().collect();
         let soa_min = records.iter().find_map(|r| match &r.data {
-            RData::SOA(s) => Some(s.minimum()),
+            RData::SOA(s) => Some(s.minimum),
             _ => None,
         }).unwrap_or(3600);
         let mut nsecs = Vec::new();

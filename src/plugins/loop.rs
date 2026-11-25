@@ -103,7 +103,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
                 // a fresh name per attempt: a retry must not look like the
                 // previous probe coming back (#18)
                 for (qname, _) in &l.probes {
-                    let mut m = Message::new(0, MessageType::Query, OpCode::Query);
+                    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
                     m.metadata.id = rand::random();
                     m.metadata.recursion_desired = true;
                     m.add_query(Query::query(Name::from_ascii(qname).unwrap_or_else(|_| Name::root()), RecordType::HINFO));

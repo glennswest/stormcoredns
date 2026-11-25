@@ -27,7 +27,8 @@ fn next_id() -> u16 {
 /// Build a query. `edns` is the advertised UDP size, or no OPT record.
 pub fn build(name: &str, qtype: RecordType, edns: Option<u16>) -> Result<Message> {
     let mut m = Message::new(0, MessageType::Query, OpCode::Query);
-    m.set_id(next_id()).set_message_type(MessageType::Query).set_op_code(OpCode::Query).metadata.recursion_desired = true;
+    m.metadata.id = next_id();
+    m.metadata.recursion_desired = true;
     let n = Name::from_ascii(name).with_context(|| format!("bad name {name}"))?;
     m.add_query(Query::query(n, qtype));
     if let Some(size) = edns {
@@ -124,7 +125,7 @@ pub fn srvs(m: &Message) -> Vec<(u16, String)> {
         .answers
         .iter()
         .filter_map(|r| match &r.data {
-            RData::SRV(s) => Some((s.port(), lower(s.target()))),
+            RData::SRV(s) => Some((s.port, lower(&s.target))),
             _ => None,
         })
         .collect();
@@ -142,10 +143,10 @@ pub fn cnames(m: &Message) -> Vec<String> {
 }
 
 pub fn txts(m: &Message) -> Vec<String> {
-    &m.answers
+    m.answers
         .iter()
         .filter_map(|r| match &r.data {
-            RData::TXT(t) => Some(t.txt_data().iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<String>()),
+            RData::TXT(t) => Some(t.txt_data.iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<String>()),
             _ => None,
         })
         .collect()
@@ -189,10 +190,10 @@ pub fn cache_ttl(m: &Message) -> u32 {
     if let Some(t) = m.answers.iter().map(|r| r.ttl).min() {
         return t;
     }
-    &m.authorities
+    m.authorities
         .iter()
         .find_map(|r| match &r.data {
-            RData::SOA(soa) => Some(r.ttl.min(soa.minimum())),
+            RData::SOA(soa) => Some(r.ttl.min(soa.minimum)),
             _ => None,
         })
         .unwrap_or(0)

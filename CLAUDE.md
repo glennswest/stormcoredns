@@ -249,7 +249,8 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 ### Paused — #34 hickory-proto 0.24.4 → 0.26.x (P1, CVE-2026-123570; 2026-11-25)
 Target 0.26.3+ (research 2026-11-14: CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); latest is 0.26.4. No 0.24/0.25 backport exists.
 0.26 is a large API break: `Message` getters/setters → public fields (`metadata.id`, `queries`, `answers`, `authorities`, `additionals`, `edns`, `signature`), `Message::new(id, type, opcode)`; `Record` → public fields (`name`, `ttl`, `dns_class`, `data` not optional); features `tokio-runtime`/`text-parsing` are gone (zone `Parser` is under `std`); DNSSEC moved to `hickory_proto::dnssec` (new signing-key API); TSIG moved too. No cargo on the session VM, so each compile round is an sc-build `cargo check`.
-- [ ] Cargo.toml (root + test/) → 0.26.4, features `std`, `dnssec-ring`; Cargo.lock from a build VM (no cargo here)
+- [x] Cargo.toml (root + test/) → 0.26.4, features `std`, `dnssec-ring`; Cargo.lock from the build VM's `cargo update` diff (round 2, job c009f60381)
+- Round 2 (b326ad0): cargo stopped at the test crate's 7 errors — next round use `cargo check --keep-going`. rdata types now have public fields, not getters (SRV `port`/`target`, SOA `minimum`/…, TXT `txt_data`): convert those call sites too
 - [ ] Message/Metadata/Query/Edns call sites
 - [ ] Record/RData/Name call sites
 - [ ] dnssec + sign (keys, RRSIG, NSEC/NSEC3, DS, verifier), tsig

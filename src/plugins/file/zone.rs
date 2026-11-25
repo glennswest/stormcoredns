@@ -18,9 +18,9 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
-/// DNAME (RFC 6672). hickory 0.24 has no type for it, so DNAME records
+/// DNAME (RFC 6672). hickory has the type but no RDATA for it, so DNAME records
 /// are kept as type 39 with the target in wire form.
-pub const DNAME: RecordType = RecordType::Unknown(39);
+pub const DNAME: RecordType = RecordType::DNAME;
 
 #[derive(Default, Debug, Clone)]
 pub struct NameData {
@@ -1035,7 +1035,7 @@ dname   IN A    192.0.2.8
 
     #[test]
     fn hickory_rejects_dnssec_records_in_zone_files() {
-        // hickory 0.24's text parser refuses NSEC/RRSIG/NSEC3 (filed as its
+        // hickory's text parser (0.26 too) refuses NSEC/RRSIG/NSEC3 (filed as its
         // own issue): signed zones reach Zone through secondary/from_records
         let text = "$ORIGIN example.org.\n@ IN SOA ns1 h 1 2 3 4 5\n@ IN NSEC www A NS SOA NSEC RRSIG\n";
         assert!(Zone::parse(text, "example.org.", None).is_err());

@@ -5,10 +5,6 @@
 //! are accepted and ignored. Any number of leading dashes, `-f v` or
 //! `-f=v`. `PORT` in the environment overrides `-dns.port`.
 
-// hickory-proto 0.24 deprecates `Message::edns()` in favour of
-// `extensions()`; the former is the clearer accessor and is what 0.25 keeps.
-#![allow(deprecated)]
-
 pub mod corefile;
 pub mod dnsutil;
 pub mod metrics;

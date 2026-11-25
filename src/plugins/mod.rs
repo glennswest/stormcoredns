@@ -70,6 +70,12 @@ pub fn publish(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) 
     metrics::post_finalize(configs);
 }
 
+/// Called after wiring and before the new instance's startup hooks:
+/// state the startup itself needs (`/ready` answers during startup, #33).
+pub fn starting(configs: &[std::sync::Arc<crate::server::config::ServerConfig>]) {
+    ready::starting(configs);
+}
+
 /// Drop anything a failed earlier build left registered (pending wiring,
 /// `ready` blocks), before a new build runs setup.
 pub fn reset_pending() {

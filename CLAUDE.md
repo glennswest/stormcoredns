@@ -241,7 +241,12 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] sc-build green at d34a85a (job 8c0d3c167a); #41 closed
 - Staging `coredns` at d34a85a was refused (403: "coredns is not built from glennswest/stormcoredns"; coredns missing from `component list`, though #39 staged earlier the same day) — sent to the master with `stormcentral note`
 
-### In progress — #34 hickory-proto 0.24.4 → 0.26.x (P1, CVE-2026-123570; 2026-11-25)
+### In progress — #33 `/ready` 200 during the kubernetes startup wait (2026-11-25)
+- [x] cause: `ready` serves from its startup hook, but its plugin list was published after all startup hooks (#7), so it was empty while `kubernetes` waited up to `startup_timeout` → 200 (CoreDNS: 503)
+- [x] fix: `plugins::starting` → `ready::starting` publishes the new plugins before the startup hooks on a first start (a reload keeps the old list); test `ready_is_503_while_kubernetes_has_not_synced` (dead API, `startup_timeout 3s`: 503 `kubernetes` during and after the wait); instance tests take turns (`INSTANCE_TESTS`)
+- [ ] sc-build green + negative control, stage `coredns`, `shipped`
+
+### Paused — #34 hickory-proto 0.24.4 → 0.26.x (P1, CVE-2026-123570; 2026-11-25)
 Target 0.26.3+ (research 2026-11-14: CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); latest is 0.26.4. No 0.24/0.25 backport exists.
 0.26 is a large API break: `Message` getters/setters → public fields (`metadata.id`, `queries`, `answers`, `authorities`, `additionals`, `edns`, `signature`), `Message::new(id, type, opcode)`; `Record` → public fields (`name`, `ttl`, `dns_class`, `data` not optional); features `tokio-runtime`/`text-parsing` are gone (zone `Parser` is under `std`); DNSSEC moved to `hickory_proto::dnssec` (new signing-key API); TSIG moved too. No cargo on the session VM, so each compile round is an sc-build `cargo check`.
 - [ ] Cargo.toml (root + test/) → 0.26.4, features `std`, `dnssec-ring`; Cargo.lock from a build VM (no cargo here)
@@ -255,4 +260,4 @@ Target 0.26.3+ (research 2026-11-14: CVE-2026-123574 and RUSTSEC-2026-0490 are f
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)
 - [ ] #34 hickory-proto 0.24.4 → ≥ 0.26.2 (CVE-2026-123570, P1)
-- [ ] #33 `/ready` 200 before the kubernetes plugin has synced; #31 watch errors logged without a resume line
+- [ ] #31 watch errors logged without a resume line

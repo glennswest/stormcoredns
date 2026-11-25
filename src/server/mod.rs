@@ -504,6 +504,7 @@ impl Instance {
             configs.push(Arc::new(c));
         }
         crate::plugins::post_finalize(&configs);
+        crate::plugins::starting(&configs);
         let servers = build::group_servers(&configs)?;
         let cancel = CancellationToken::new();
         let mut tasks = Vec::new();
@@ -726,6 +727,10 @@ mod tests {
         assert_eq!(resolve_bind("127.0.0.1:53").unwrap(), "127.0.0.1:53".parse::<SocketAddr>().unwrap());
     }
 
+    /// Building an instance touches process-wide state (`ready`'s blocks
+    /// and plugin list, pending wiring): the tests that start one take turns.
+    static INSTANCE_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     /// Waits up to `secs` for the reload request counter to pass `from`.
     async fn reload_requested(rx: &mut watch::Receiver<u64>, from: u64, secs: u64) -> bool {
         tokio::time::timeout(Duration::from_secs(secs), async {
@@ -742,6 +747,7 @@ mod tests {
 
     #[tokio::test]
     async fn reload_watcher_keeps_watching_and_a_failed_start_cleans_up() {
+        let _g = INSTANCE_TESTS.lock().await;
         let dir = std::env::temp_dir().join(format!("scd-reload-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("Corefile");
@@ -777,6 +783,7 @@ mod tests {
 
     #[tokio::test]
     async fn lameduck_only_at_process_exit() {
+        let _g = INSTANCE_TESTS.lock().await;
         let corefile = ".:0 {\n bind 127.0.0.1\n health 127.0.0.1:18080 {\n  lameduck 2s\n }\n ready 127.0.0.1:18181\n whoami\n}\n";
         let start = || async {
             let blocks = crate::corefile::parser::parse_str(corefile, "t", std::path::Path::new(".")).unwrap();
@@ -808,8 +815,53 @@ mod tests {
         assert!(t.elapsed() >= Duration::from_secs(2), "exit waited for lameduck");
     }
 
+    /// #33: `/ready` serves from `ready`'s startup hook, while `kubernetes`
+    /// still waits (up to `startup_timeout`) for an API that never answers.
+    /// It must say 503 naming kubernetes then, and after the wait too, as
+    /// CoreDNS does; before the fix the plugin list was empty until the
+    /// startup hooks ended, so it said 200.
+    #[cfg(feature = "kubernetes")]
+    #[tokio::test]
+    async fn ready_is_503_while_kubernetes_has_not_synced() {
+        let _g = INSTANCE_TESTS.lock().await;
+        crate::plugins::ready::forget_instances(); // as at process start
+        // nothing listens on the API port
+        let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let api = dead.local_addr().unwrap();
+        drop(dead);
+        let corefile = format!(
+            ".:0 {{\n bind 127.0.0.1\n ready 127.0.0.1:18182\n kubernetes cluster.local {{\n  endpoint http://{}\n  startup_timeout 3s\n }}\n}}\n",
+            api
+        );
+        let get = || async {
+            let c = reqwest::Client::builder().timeout(Duration::from_secs(1)).build().unwrap();
+            match c.get("http://127.0.0.1:18182/ready").send().await {
+                Ok(r) => (r.status().as_u16(), r.text().await.unwrap_or_default()),
+                Err(_) => (0, String::new()),
+            }
+        };
+        let blocks = crate::corefile::parser::parse_str(&corefile, "t", std::path::Path::new(".")).unwrap();
+        let opts = build::BuildOptions { default_port: 0, ..Default::default() };
+        let starting = tokio::spawn(async move { Instance::start(blocks, &opts).await });
+        // inside the startup wait (the report saw 200 at 3 s of a 5 s wait)
+        let mut seen = (0, String::new());
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            seen = get().await;
+            if seen.0 != 0 {
+                break;
+            }
+        }
+        assert!(!starting.is_finished(), "still inside startup_timeout");
+        assert_eq!(seen, (503, "kubernetes".to_string()), "during startup");
+        let inst = starting.await.unwrap().unwrap();
+        assert_eq!(get().await, (503, "kubernetes".to_string()), "after startup_timeout, still not synced");
+        inst.stop().await;
+    }
+
     #[tokio::test]
     async fn restart_hooks_run_on_every_reload_attempt() {
+        let _g = INSTANCE_TESTS.lock().await;
         let blocks = crate::corefile::parser::parse_str(".:0 {\n bind 127.0.0.1\n whoami\n}\n", "t", std::path::Path::new(".")).unwrap();
         let opts = build::BuildOptions { default_port: 0, ..Default::default() };
         let mut inst = Instance::start(blocks, &opts).await.unwrap();

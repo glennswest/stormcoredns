@@ -27,8 +27,10 @@ pub fn reset() {
     ENABLED_BLOCKS.lock().clear();
 }
 
-pub fn post_finalize(configs: &[Arc<ServerConfig>]) {
-    let blocks = std::mem::take(&mut *ENABLED_BLOCKS.lock());
+/// Set once an instance has published its plugin list.
+static PUBLISHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn collect(configs: &[Arc<ServerConfig>], blocks: &HashSet<usize>) -> Vec<(&'static str, Arc<dyn Handler>)> {
     let mut list = Vec::new();
     for c in configs {
         if !blocks.contains(&c.block_index) {
@@ -40,7 +42,36 @@ pub fn post_finalize(configs: &[Arc<ServerConfig>]) {
             }
         }
     }
+    list
+}
+
+/// Before the new instance's startup hooks run (`/ready` is already
+/// serving then, and `kubernetes` waits up to `startup_timeout` for the API):
+/// on the first start there is no running instance whose list must stay
+/// (#7), so the new plugins answer for readiness at once. Without this the
+/// list was empty during startup and `/ready` said 200 (#33).
+pub fn starting(configs: &[Arc<ServerConfig>]) {
+    if PUBLISHED.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let list = collect(configs, &ENABLED_BLOCKS.lock());
     *PLUGINS.lock() = list;
+}
+
+/// Tests: back to the state of a process that has started nothing.
+#[cfg(test)]
+pub fn forget_instances() {
+    PUBLISHED.store(false, std::sync::atomic::Ordering::SeqCst);
+    DRAINING.store(false, std::sync::atomic::Ordering::Relaxed);
+    PLUGINS.lock().clear();
+}
+
+/// The new instance is serving: its plugins answer for readiness.
+pub fn post_finalize(configs: &[Arc<ServerConfig>]) {
+    let blocks = std::mem::take(&mut *ENABLED_BLOCKS.lock());
+    *PLUGINS.lock() = collect(configs, &blocks);
+    PUBLISHED.store(true, std::sync::atomic::Ordering::SeqCst);
+    DRAINING.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Names of plugins that are not (yet) ready.

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-25 (#33)
+- **fix:** `/ready` was 200 during the first start while `kubernetes` waited (up to `startup_timeout`) for an API that never answered. `ready` serves from its startup hook, but its plugin list was published only once every startup hook had ended, so the list was empty. On the first start the new instance's plugins now answer for readiness before the startup hooks run; a reload still keeps the running instance's list until the new one serves (#7). With no apiserver `/ready` is 503 `kubernetes` during the startup wait and after it, as in CoreDNS. Test `ready_is_503_while_kubernetes_has_not_synced`.
+
 ### 2026-11-21 (#41)
 - **fix:** DoQ: a length-prefixed message shorter than a DNS header (12 bytes) closes the connection with DOQ_PROTOCOL_ERROR. Before, the server read a message id that was not there and the stream task panicked (finding 23d52725c438). Test `short_frames_are_protocol_errors_not_panics`.
 - **fix:** A bare-number duration that is negative, NaN, infinite or too large (`-1`, `NaN`, `inf`, `1e300`) is a config error instead of a panic at startup or reload (finding 495584334d10). Cases added to `durations`. Both verified by sc-build at d34a85a.

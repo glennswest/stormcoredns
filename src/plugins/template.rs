@@ -217,7 +217,7 @@ impl Handler for TemplateHandler {
                             "answer" => {
                                 // CNAME answers to A/AAAA are resolved through the server, as CoreDNS's upstream does
                                 if matches!(req.qtype(), RecordType::A | RecordType::AAAA) {
-                                    if let Some(RData::CNAME(c)) = r.data() {
+                                    if let RData::CNAME(c) = &r.data {
                                         if let Ok(up) = crate::server::self_lookup(req, c.0.clone(), req.qtype()).await {
                                             if up.metadata.truncation {
                                                 m.metadata.truncation = true;
@@ -340,8 +340,8 @@ mod tests {
         let mut req = Request::for_test("ip-10-1-2-3.example.", RecordType::A);
         let m = h.serve_dns(&mut req, Next::new(&[])).await.unwrap().into_msg().unwrap();
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].ttl(), 60);
-        assert!(matches!(m.answers[0].data(), Some(hickory_proto::rr::RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 1, 2, 3)));
+        assert_eq!(m.answers[0].ttl, 60);
+        assert!(matches!(&m.answers[0].data, hickory_proto::rr::RData::A(a) if a.0 == std::net::Ipv4Addr::new(10, 1, 2, 3)));
     }
 
     #[tokio::test]

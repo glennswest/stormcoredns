@@ -76,7 +76,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
     // after the delete was refilled from the plugin: the plugin itself still
     // has the Service.
     let ttl = match dns::query_udp_retry(server, &fqdn, RecordType::A, Duration::from_secs(2)).await {
-        Ok(m) => m.answers.iter().map(|r| r.ttl()).max().unwrap_or(0),
+        Ok(m) => m.answers.iter().map(|r| r.ttl).max().unwrap_or(0),
         Err(_) => 0,
     };
     kube.delete_service(name).await?;
@@ -89,7 +89,7 @@ pub async fn run(env: &Env, kube: &Kube, rep: &mut Report) -> anyhow::Result<()>
                 if dns::rcode(&m) == ResponseCode::NXDomain {
                     return pass(format!("{fqdn} NXDOMAIN {} ms after the delete (answer TTL was {ttl}s)", start.elapsed().as_millis()));
                 }
-                if let Some(t) = m.answers.iter().map(|r| r.ttl()).max() {
+                if let Some(t) = m.answers.iter().map(|r| r.ttl).max() {
                     if t > prev_ttl {
                         refills.push(start.elapsed().as_secs());
                     }

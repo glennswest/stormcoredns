@@ -8,8 +8,8 @@ use crate::dnsutil;
 use crate::plugin::Request;
 use anyhow::{anyhow, bail, Result};
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::dnssec::rdata::DNSSECRData;
-use hickory_proto::rr::dnssec::Nsec3HashAlgorithm;
+use hickory_proto::dnssec::rdata::DNSSECRData;
+use hickory_proto::dnssec::Nsec3HashAlgorithm;
 use hickory_proto::rr::rdata::{CNAME, NULL};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinDecoder, BinEncodable};
@@ -92,21 +92,21 @@ impl Zone {
         let mut names: BTreeMap<String, NameData> = BTreeMap::new();
         let mut signed = false;
         for r in records {
-            let owner = dnsutil::name_str(r.name());
+            let owner = dnsutil::name_str(&r.name);
             if !dnsutil::is_subdomain(&origin, &owner) {
                 tracing::warn!("zone {}: ignoring out-of-zone record for {}", origin, owner);
                 continue;
             }
             let nd = names.entry(owner).or_default();
-            match r.data() {
-                Some(RData::DNSSEC(DNSSECRData::RRSIG(sig))) => {
+            match &r.data {
+                RData::DNSSEC(DNSSECRData::RRSIG(sig)) => {
                     signed = true;
-                    nd.rrsigs.entry(sig.type_covered()).or_default().push(r);
+                    nd.rrsigs.entry(sig.input().type_covered).or_default().push(r);
                 }
                 _ => {
                     let t = r.record_type();
                     let set = nd.rrsets.entry(t).or_default();
-                    if !set.iter().any(|x| x.data() == r.data()) {
+                    if !set.iter().any(|x| x.data == r.data) {
                         set.push(r);
                     }
                 }
@@ -116,8 +116,8 @@ impl Zone {
             .get(&origin)
             .and_then(|nd| nd.rrsets.get(&RecordType::SOA))
             .and_then(|v| v.first())
-            .and_then(|r| match r.data() {
-                Some(RData::SOA(s)) => Some(s.serial()),
+            .and_then(|r| match &r.data {
+                RData::SOA(s) => Some(s.serial()),
                 _ => None,
             })
             .ok_or_else(|| anyhow!("zone {}: no SOA record at the apex", origin))?;
@@ -186,9 +186,9 @@ impl Zone {
         if let Some(nd) = self.names.get(&self.origin) {
             if let Some(soa) = nd.rrsets.get(&RecordType::SOA).and_then(|v| v.first()) {
                 let mut s = soa.clone();
-                if let Some(RData::SOA(d)) = s.data() {
-                    let ttl = s.ttl().min(d.minimum());
-                    s.set_ttl(ttl);
+                if let RData::SOA(d) = &s.data {
+                    let ttl = s.ttl.min(d.minimum());
+                    s.ttl = ttl;
                 }
                 out.push(s);
                 if do_bit {
@@ -220,10 +220,10 @@ impl Zone {
     /// Glue: A/AAAA for NS/SRV/MX targets inside the zone.
     fn additional(&self, records: &[Record], do_bit: bool, out: &mut Vec<Record>) {
         for r in records {
-            let target = match r.data() {
-                Some(RData::NS(ns)) => Some(&ns.0),
-                Some(RData::SRV(srv)) => Some(srv.target()),
-                Some(RData::MX(mx)) => Some(mx.exchange()),
+            let target = match &r.data {
+                RData::NS(ns) => Some(&ns.0),
+                RData::SRV(srv) => Some(srv.target()),
+                RData::MX(mx) => Some(mx.exchange()),
                 _ => None,
             };
             let Some(t) = target else { continue };
@@ -336,7 +336,7 @@ impl Zone {
             if let Some((downer, dnd)) = self.dname_for(&current) {
                 let mut dn = Vec::new();
                 self.with_sigs(dnd, DNAME, do_bit, &mut dn);
-                let Some((dtarget, ttl)) = dn.iter().find_map(|r| dname_target(r).map(|t| (dnsutil::name_str(&t), r.ttl()))) else {
+                let Some((dtarget, ttl)) = dn.iter().find_map(|r| dname_target(r).map(|t| (dnsutil::name_str(&t), r.ttl))) else {
                     break;
                 };
                 answers.extend(dn);
@@ -380,8 +380,8 @@ impl Zone {
                     let mut cn = Vec::new();
                     self.with_sigs(nd, RecordType::CNAME, do_bit, &mut cn);
                     rename(&mut cn, owner.as_ref());
-                    target = cn.iter().find_map(|r| match r.data() {
-                        Some(RData::CNAME(c)) => Some(dnsutil::name_str(&c.0)),
+                    target = cn.iter().find_map(|r| match &r.data {
+                        RData::CNAME(c) => Some(dnsutil::name_str(&c.0)),
                         _ => None,
                     });
                     answers.extend(cn);
@@ -646,15 +646,15 @@ fn next_closer(name: &str, ce: &str) -> String {
 fn rename(records: &mut [Record], owner: Option<&Name>) {
     if let Some(o) = owner {
         for r in records.iter_mut() {
-            r.set_name(o.clone());
+            r.name = o.clone();
         }
     }
 }
 
 /// The target of a DNAME record.
 pub fn dname_target(r: &Record) -> Option<Name> {
-    match r.data() {
-        Some(RData::Unknown { code, rdata }) if *code == DNAME => {
+    match &r.data {
+        RData::Unknown { code, rdata } if *code == DNAME => {
             let mut d = BinDecoder::new(rdata.anything());
             Name::read(&mut d).ok()
         }
@@ -690,15 +690,15 @@ fn nsec3_chain(origin: &str, names: &BTreeMap<String, NameData>) -> Option<Nsec3
         .get(origin)
         .and_then(|nd| nd.rrsets.get(&RecordType::NSEC3PARAM))
         .and_then(|v| v.first())
-        .and_then(|r| match r.data() {
-            Some(RData::DNSSEC(DNSSECRData::NSEC3PARAM(p))) => Some((p.hash_algorithm(), p.salt().to_vec(), p.iterations())),
+        .and_then(|r| match &r.data {
+            RData::DNSSEC(DNSSECRData::NSEC3PARAM(p)) => Some((p.hash_algorithm(), p.salt().to_vec(), p.iterations())),
             _ => None,
         });
     let mut first = None;
     let mut chain = Vec::new();
     for (owner, nd) in names {
         let Some(r) = nd.rrsets.get(&RecordType::NSEC3).and_then(|v| v.first()) else { continue };
-        let Some(RData::DNSSEC(DNSSECRData::NSEC3(n))) = r.data() else { continue };
+        let RData::DNSSEC(DNSSECRData::NSEC3(n)) = &r.data else { continue };
         if first.is_none() {
             first = Some((n.hash_algorithm(), n.salt().to_vec(), n.iterations()));
         }
@@ -718,10 +718,10 @@ fn nsec3_chain(origin: &str, names: &BTreeMap<String, NameData>) -> Option<Nsec3
 
 /// Turn the ANAME stand-in `dname_as_aname` made back into a DNAME.
 fn aname_to_dname(r: Record) -> Result<Record> {
-    let Some(RData::ANAME(a)) = r.data() else { return Ok(r) };
+    let RData::ANAME(a) = &r.data else { return Ok(r) };
     let wire = a.0.to_bytes().map_err(|e| anyhow!("DNAME target {}: {}", a.0, e))?;
-    let mut d = Record::from_rdata(r.name().clone(), r.ttl(), RData::Unknown { code: DNAME, rdata: NULL::with(wire) });
-    d.set_dns_class(r.dns_class());
+    let mut d = Record::from_rdata(r.name.clone(), r.ttl, RData::Unknown { code: DNAME, rdata: NULL::with(wire) });
+    d.dns_class = r.dns_class;
     Ok(d)
 }
 
@@ -846,7 +846,7 @@ mail    IN MX   10 www
         assert_eq!(m.metadata.response_code, ResponseCode::NoError);
         assert!(m.answers.is_empty());
         assert_eq!(m.authorities[0].record_type(), RecordType::SOA);
-        assert_eq!(m.authorities[0].ttl(), 300, "SOA ttl clamped to minimum");
+        assert_eq!(m.authorities[0].ttl, 300, "SOA ttl clamped to minimum");
     }
 
     #[tokio::test]
@@ -865,7 +865,7 @@ mail    IN MX   10 www
         let z = zone();
         let m = q(&z, "foo.wild.example.org.", RecordType::A).await;
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].name().to_ascii(), "foo.wild.example.org.");
+        assert_eq!(m.answers[0].name.to_ascii(), "foo.wild.example.org.");
         let m = q(&z, "b.c.example.org.", RecordType::A).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NoError, "empty non-terminal is NODATA");
         let m = q(&z, "nope.example.org.", RecordType::A).await;
@@ -918,13 +918,13 @@ a.b.c   IN TXT  "deep"
         // the apex wildcard covers names whose closest encloser is the apex
         let m = q(&z, "other.example.org.", RecordType::TXT).await;
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].name().to_ascii(), "other.example.org.");
+        assert_eq!(m.answers[0].name.to_ascii(), "other.example.org.");
         let m = q(&z, "y.x.example.org.", RecordType::TXT).await;
         assert_eq!(m.answers.len(), 1);
         // *.wild covers more than one label below wild
         let m = q(&z, "deep.foo.wild.example.org.", RecordType::A).await;
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].name().to_ascii(), "deep.foo.wild.example.org.");
+        assert_eq!(m.answers[0].name.to_ascii(), "deep.foo.wild.example.org.");
         // the closest encloser c.example.org exists, so *.example.org does not apply below it
         let m = q(&z, "z.c.example.org.", RecordType::TXT).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
@@ -967,21 +967,21 @@ dname   IN A    192.0.2.8
         let a = &m.answers;
         assert_eq!(a.len(), 3, "{:?}", a);
         assert_eq!(a[0].record_type(), DNAME);
-        assert_eq!(a[0].name().to_ascii(), "legacy.example.org.");
+        assert_eq!(a[0].name.to_ascii(), "legacy.example.org.");
         assert_eq!(dname_target(&a[0]).unwrap().to_ascii(), "modern.example.org.");
         assert_eq!(a[1].record_type(), RecordType::CNAME);
-        assert_eq!(a[1].name().to_ascii(), "www.legacy.example.org.");
-        assert_eq!(a[1].ttl(), 300, "synthesized CNAME takes the DNAME's TTL");
-        match a[1].data() {
-            Some(RData::CNAME(c)) => assert_eq!(c.0.to_ascii(), "www.modern.example.org."),
+        assert_eq!(a[1].name.to_ascii(), "www.legacy.example.org.");
+        assert_eq!(a[1].ttl, 300, "synthesized CNAME takes the DNAME's TTL");
+        match &a[1].data {
+            RData::CNAME(c) => assert_eq!(c.0.to_ascii(), "www.modern.example.org."),
             o => panic!("{:?}", o),
         }
         assert_eq!(a[2].record_type(), RecordType::A);
         // out-of-zone target: DNAME + CNAME, not chased without the server
         let m = q(&z, "a.b.ext.example.org.", RecordType::A).await;
         assert_eq!(m.answers.len(), 2);
-        match m.answers[1].data() {
-            Some(RData::CNAME(c)) => assert_eq!(c.0.to_ascii(), "a.b.example.net."),
+        match &m.answers[1].data {
+            RData::CNAME(c) => assert_eq!(c.0.to_ascii(), "a.b.example.net."),
             o => panic!("{:?}", o),
         }
         // the owner itself is not redirected
@@ -1043,7 +1043,7 @@ dname   IN A    192.0.2.8
 
     // ------------------------------------------------------ #13: NSEC3
 
-    use hickory_proto::rr::dnssec::rdata::{NSEC3, NSEC3PARAM};
+    use hickory_proto::dnssec::rdata::{NSEC3, NSEC3PARAM};
     use hickory_proto::rr::rdata::{A, SOA, TXT};
 
     fn b32hex(b: &[u8]) -> String {
@@ -1102,7 +1102,7 @@ dname   IN A    192.0.2.8
     }
 
     fn nsec3_owners(m: &Message) -> Vec<String> {
-        m.authorities.iter().filter(|r| r.record_type() == RecordType::NSEC3).map(|r| dnsutil::name_str(r.name())).collect()
+        m.authorities.iter().filter(|r| r.record_type() == RecordType::NSEC3).map(|r| dnsutil::name_str(&r.name)).collect()
     }
 
     fn hash_owner(name: &str) -> String {

@@ -63,10 +63,10 @@ mod tests {
         let r = Whoami.serve_dns(&mut req, Next::new(&[])).await.unwrap();
         let m = r.into_msg().unwrap();
         assert_eq!(m.additionals.len(), 2);
-        assert!(matches!(m.additionals[0].data(), Some(RData::A(_))));
-        assert_eq!(m.additionals[1].name().to_ascii(), "_udp.example.org.");
-        match m.additionals[1].data() {
-            Some(RData::SRV(s)) => {
+        assert!(matches!(&m.additionals[0].data, RData::A(_)));
+        assert_eq!(m.additionals[1].name.to_ascii(), "_udp.example.org.");
+        match &m.additionals[1].data {
+            RData::SRV(s) => {
                 assert_eq!(s.port(), 40000);
                 assert!(s.target().is_root());
             }

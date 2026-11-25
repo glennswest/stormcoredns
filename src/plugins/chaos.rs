@@ -34,7 +34,7 @@ impl Handler for Chaos {
         m.metadata.authoritative = true;
         for t in texts {
             let mut r = Record::from_rdata(req.qname(), 0, RData::TXT(TXT::new(vec![t])));
-            r.set_dns_class(DNSClass::CH);
+            r.dns_class = DNSClass::CH;
             m.add_answer(r);
         }
         Ok(Reply::Msg(m))

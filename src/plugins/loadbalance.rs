@@ -71,9 +71,9 @@ fn weighted_first(w: &Weights, qname: &str, answers: &[Record]) -> Option<Record
     let table = w.domains.get(&qname.to_ascii_lowercase())?;
     let candidates: Vec<(&Record, u8)> = answers
         .iter()
-        .filter_map(|r| match r.data() {
-            Some(RData::A(a)) => Some((r, *table.get(&IpAddr::V4(a.0)).unwrap_or(&1))),
-            Some(RData::AAAA(a)) => Some((r, *table.get(&IpAddr::V6(a.0)).unwrap_or(&1))),
+        .filter_map(|r| match &r.data {
+            RData::A(a) => Some((r, *table.get(&IpAddr::V4(a.0)).unwrap_or(&1))),
+            RData::AAAA(a) => Some((r, *table.get(&IpAddr::V6(a.0)).unwrap_or(&1))),
             _ => None,
         })
         .collect();

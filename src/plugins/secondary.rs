@@ -116,8 +116,8 @@ async fn primary_serial(primary: SocketAddr, origin: &str) -> Result<u32> {
     }
     &m.answers
         .iter()
-        .find_map(|r| match r.data() {
-            Some(RData::SOA(s)) => Some(s.serial()),
+        .find_map(|r| match &r.data {
+            RData::SOA(s) => Some(s.serial()),
             _ => None,
         })
         .ok_or_else(|| anyhow!("no SOA in answer from {}", primary))
@@ -185,7 +185,7 @@ impl SecondaryZone {
     /// The SOA refresh, retry and expire timers of the zone we hold.
     fn timers(&self) -> (Duration, Duration, Duration) {
         let soa = self.zone.load().as_ref().and_then(|z| z.soa().cloned());
-        let (refresh, retry, expire) = match soa.as_ref().and_then(|r| r.data()) {
+        let (refresh, retry, expire) = match soa.as_ref().map(|r| &r.data) {
             Some(RData::SOA(s)) => (s.refresh(), s.retry(), s.expire()),
             _ => (3600, 600, 604800),
         };

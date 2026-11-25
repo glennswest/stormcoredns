@@ -295,7 +295,7 @@ impl Request {
             (Some(q), Some(r)) => {
                 q.query_type() == r.query_type()
                     && q.query_class() == r.query_class()
-                    && q.name().to_ascii().eq_ignore_ascii_case(&r.name().to_ascii())
+                    && q.name().to_ascii().eq_ignore_ascii_case(&r.name.to_ascii())
             }
             (None, None) => true,
             _ => false,

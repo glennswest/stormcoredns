@@ -107,9 +107,9 @@ pub fn addrs(m: &Message) -> Vec<IpAddr> {
     let mut v: Vec<IpAddr> = m
         .answers
         .iter()
-        .filter_map(|r| match r.data() {
-            Some(RData::A(a)) => Some(IpAddr::V4(a.0)),
-            Some(RData::AAAA(a)) => Some(IpAddr::V6(a.0)),
+        .filter_map(|r| match &r.data {
+            RData::A(a) => Some(IpAddr::V4(a.0)),
+            RData::AAAA(a) => Some(IpAddr::V6(a.0)),
             _ => None,
         })
         .collect();
@@ -123,8 +123,8 @@ pub fn srvs(m: &Message) -> Vec<(u16, String)> {
     let mut v: Vec<(u16, String)> = m
         .answers
         .iter()
-        .filter_map(|r| match r.data() {
-            Some(RData::SRV(s)) => Some((s.port(), lower(s.target()))),
+        .filter_map(|r| match &r.data {
+            RData::SRV(s) => Some((s.port(), lower(s.target()))),
             _ => None,
         })
         .collect();
@@ -134,18 +134,18 @@ pub fn srvs(m: &Message) -> Vec<(u16, String)> {
 }
 
 pub fn ptrs(m: &Message) -> Vec<String> {
-    m.answers.iter().filter_map(|r| match r.data() { Some(RData::PTR(p)) => Some(lower(&p.0)), _ => None }).collect()
+    m.answers.iter().filter_map(|r| match &r.data { RData::PTR(p) => Some(lower(&p.0)), _ => None }).collect()
 }
 
 pub fn cnames(m: &Message) -> Vec<String> {
-    m.answers.iter().filter_map(|r| match r.data() { Some(RData::CNAME(c)) => Some(lower(&c.0)), _ => None }).collect()
+    m.answers.iter().filter_map(|r| match &r.data { RData::CNAME(c) => Some(lower(&c.0)), _ => None }).collect()
 }
 
 pub fn txts(m: &Message) -> Vec<String> {
     &m.answers
         .iter()
-        .filter_map(|r| match r.data() {
-            Some(RData::TXT(t)) => Some(t.txt_data().iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<String>()),
+        .filter_map(|r| match &r.data {
+            RData::TXT(t) => Some(t.txt_data().iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<String>()),
             _ => None,
         })
         .collect()
@@ -178,7 +178,7 @@ pub fn reverse(ip: IpAddr) -> String {
 
 /// Short text for a reply, for test details.
 pub fn show(m: &Message) -> String {
-    let answers: Vec<String> = m.answers.iter().map(|r| format!("{} {} ttl={}", r.record_type(), r.data().map(|d| d.to_string()).unwrap_or_default(), r.ttl())).collect();
+    let answers: Vec<String> = m.answers.iter().map(|r| format!("{} {} ttl={}", r.record_type(), r.data, r.ttl)).collect();
     format!("{:?}{} [{}]", rcode(m), if m.metadata.truncation { " TC" } else { "" }, answers.join(", "))
 }
 
@@ -186,13 +186,13 @@ pub fn show(m: &Message) -> String {
 /// a negative reply the SOA's min(TTL, MINIMUM) (RFC 2308), as `cache`
 /// computes it. A reply with neither is not cacheable.
 pub fn cache_ttl(m: &Message) -> u32 {
-    if let Some(t) = m.answers.iter().map(|r| r.ttl()).min() {
+    if let Some(t) = m.answers.iter().map(|r| r.ttl).min() {
         return t;
     }
     &m.authorities
         .iter()
-        .find_map(|r| match r.data() {
-            Some(RData::SOA(soa)) => Some(r.ttl().min(soa.minimum())),
+        .find_map(|r| match &r.data {
+            RData::SOA(soa) => Some(r.ttl.min(soa.minimum())),
             _ => None,
         })
         .unwrap_or(0)

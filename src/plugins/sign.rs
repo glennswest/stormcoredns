@@ -18,7 +18,7 @@ use crate::plugins::dnssec::rrsets;
 use crate::plugins::file::zone::Zone;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use hickory_proto::rr::dnssec::rdata::{DNSSECRData, NSEC};
+use hickory_proto::dnssec::rdata::{DNSSECRData, NSEC};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -53,9 +53,9 @@ impl Signer {
             match r.record_type() {
                 RecordType::RRSIG | RecordType::NSEC | RecordType::NSEC3 | RecordType::NSEC3PARAM | RecordType::DNSKEY | RecordType::CDS | RecordType::CDNSKEY => continue,
                 RecordType::SOA => {
-                    if let Some(RData::SOA(s)) = r.data() {
+                    if let RData::SOA(s) = &r.data {
                         let soa = hickory_proto::rr::rdata::SOA::new(s.mname().clone(), s.rname().clone(), serial, s.refresh(), s.retry(), s.expire(), s.minimum());
-                        records.push(Record::from_rdata(r.name().clone(), r.ttl(), RData::SOA(soa)));
+                        records.push(Record::from_rdata(r.name.clone(), r.ttl, RData::SOA(soa)));
                     }
                 }
                 _ => records.push(r),
@@ -69,12 +69,12 @@ impl Signer {
         // NSEC chain over all owner names in canonical order
         let mut by_name: BTreeMap<Name, HashSet<RecordType>> = BTreeMap::new();
         for r in &records {
-            by_name.entry(r.name().clone()).or_default().insert(r.record_type());
+            by_name.entry(r.name.clone()).or_default().insert(r.record_type());
         }
         // delegation points only own NS (and DS) from the parent's view
         let names: Vec<Name> = by_name.keys().cloned().collect();
-        let soa_min = records.iter().find_map(|r| match r.data() {
-            Some(RData::SOA(s)) => Some(s.minimum()),
+        let soa_min = records.iter().find_map(|r| match &r.data {
+            RData::SOA(s) => Some(s.minimum()),
             _ => None,
         }).unwrap_or(3600);
         let mut nsecs = Vec::new();
@@ -93,7 +93,7 @@ impl Signer {
         let delegations: Vec<Name> = by_name.iter().filter(|(n, t)| **n != apex && t.contains(&RecordType::NS)).map(|(n, _)| n.clone()).collect();
         let mut sigs = Vec::new();
         for set in rrsets(&records) {
-            let owner: &Name = set[0].name();
+            let owner: &Name = &set[0].name;
             let t = set[0].record_type();
             // records at/below a delegation are not signed by the parent,
             // except DS and NSEC at the cut itself
@@ -113,7 +113,7 @@ impl Signer {
         let mut out = String::new();
         out.push_str(&format!("; File written on {} by stormcoredns sign\n$ORIGIN {}\n$TTL {}\n", chrono::Utc::now().to_rfc3339(), self.origin, soa_min));
         // SOA first, then the rest in name order
-        records.sort_by(|a, b| a.name().cmp(b.name()).then(u16::from(a.record_type()).cmp(&u16::from(b.record_type()))));
+        records.sort_by(|a, b| a.name.cmp(&b.name).then(u16::from(a.record_type()).cmp(&u16::from(b.record_type()))));
         if let Some(pos) = records.iter().position(|r| r.record_type() == RecordType::SOA) {
             let soa = records.remove(pos);
             records.insert(0, soa);

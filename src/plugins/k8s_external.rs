@@ -339,12 +339,12 @@ mod tests {
         assert_eq!(m.answers.len(), 2);
         let m = q(&e, "pg-1.db.prod.example.com.", RecordType::A).await;
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(m.answers[0].data(), Some(RData::A(a)) if a.0.octets() == [10, 0, 0, 2]));
+        assert!(matches!(&m.answers[0].data, RData::A(a) if a.0.octets() == [10, 0, 0, 2]));
         let m = q(&e, "pg-9.db.prod.example.com.", RecordType::A).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
         let m = q(&e, "_pg._tcp.db.prod.example.com.", RecordType::SRV).await;
-        let targets: Vec<String> = m.answers.iter().filter_map(|r| match r.data() {
-            Some(RData::SRV(s)) => Some(s.target().to_ascii()),
+        let targets: Vec<String> = m.answers.iter().filter_map(|r| match &r.data {
+            RData::SRV(s) => Some(s.target().to_ascii()),
             _ => None,
         }).collect();
         assert_eq!(targets, vec!["pg-0.db.prod.example.com.", "pg-1.db.prod.example.com."]);

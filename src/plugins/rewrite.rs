@@ -212,7 +212,7 @@ impl Rewrite {
                                 }
                                 let mut q = std::mem::take(&mut req.msg.queries);
                                 if let Some(first) = q.first_mut() {
-                                    first.set_name(n);
+                                    first.name = n;
                                 }
                                 for qq in q {
                                     req.msg.add_query(qq);
@@ -337,7 +337,7 @@ impl Rewrite {
         let mut q = std::mem::take(&mut m.queries);
         if let Some(first) = q.first_mut() {
             if let Some(n) = &orig_name {
-                first.set_name(n.clone());
+                first.name = n.clone();
             }
             if let Some(t) = undo.orig_type {
                 first.set_query_type(t);
@@ -355,17 +355,17 @@ impl Rewrite {
             let mut answers = std::mem::take(&mut m.answers);
             for (rule, matcher, to) in &undo.answer_rules {
                 for r in answers.iter_mut() {
-                    let rname = dnsutil::name_str(r.name());
+                    let rname = dnsutil::name_str(&r.name);
                     match rule {
                         AnswerRule::Auto => {
                             if rname == new_qname {
                                 if let Some(o) = &orig_name {
-                                    r.set_name(o.clone());
+                                    r.name = o.clone();
                                 }
                             } else if let Some((inv, back)) = matcher.inverse(to) {
                                 if let Some(n) = inv.rewrite(&rname, &back) {
                                     if let Ok(nn) = Name::from_ascii(&n) {
-                                        r.set_name(nn);
+                                        r.name = nn;
                                     }
                                 }
                             }
@@ -373,22 +373,22 @@ impl Rewrite {
                         AnswerRule::Name(am, ato) => {
                             if let Some(n) = am.rewrite(&rname, ato) {
                                 if let Ok(nn) = Name::from_ascii(&n) {
-                                    r.set_name(nn);
+                                    r.name = nn;
                                 }
                             }
                         }
                         AnswerRule::Value(vm, vto) => {
-                            let target = match r.data() {
-                                Some(RData::CNAME(c)) => Some(dnsutil::name_str(&c.0)),
-                                Some(RData::PTR(p)) => Some(dnsutil::name_str(&p.0)),
+                            let target = match &r.data {
+                                RData::CNAME(c) => Some(dnsutil::name_str(&c.0)),
+                                RData::PTR(p) => Some(dnsutil::name_str(&p.0)),
                                 _ => None,
                             };
                             if let Some(t) = target {
                                 if let Some(n) = vm.rewrite(&t, vto) {
                                     if let Ok(nn) = Name::from_ascii(&n) {
-                                        match r.data_mut() {
-                                            Some(RData::CNAME(c)) => c.0 = nn,
-                                            Some(RData::PTR(p)) => p.0 = nn,
+                                        match &mut r.data {
+                                            RData::CNAME(c) => c.0 = nn,
+                                            RData::PTR(p) => p.0 = nn,
                                             _ => {}
                                         }
                                     }
@@ -404,9 +404,9 @@ impl Rewrite {
         for (matcher, min, max) in &undo.ttl {
             let mut answers = std::mem::take(&mut m.answers);
             for r in answers.iter_mut() {
-                if matcher.matches(&dnsutil::name_str(r.name())) {
-                    let t = r.ttl().clamp(*min, *max);
-                    r.set_ttl(t);
+                if matcher.matches(&dnsutil::name_str(&r.name)) {
+                    let t = r.ttl.clamp(*min, *max);
+                    r.ttl = t;
                 }
             }
             m.insert_answers(answers);
@@ -423,11 +423,11 @@ impl Rewrite {
             let mut chased: Vec<Record> = Vec::new();
             let mut changed = false;
             for r in answers.iter_mut() {
-                if let Some(RData::CNAME(c)) = r.data() {
+                if let RData::CNAME(c) = &r.data {
                     let t = dnsutil::name_str(&c.0);
                     if let Some(n) = matcher.rewrite(&t, to) {
                         if let Ok(nn) = Name::from_ascii(&n) {
-                            *r = Record::from_rdata(r.name().clone(), r.ttl(), RData::CNAME(CNAME(nn.clone())));
+                            *r = Record::from_rdata(r.name.clone(), r.ttl, RData::CNAME(CNAME(nn.clone())));
                             changed = true;
                             if let Ok(res) = crate::server::self_lookup(req, nn, req.qtype()).await {
                                 chased.extend(res.answers.iter().cloned());
@@ -463,7 +463,7 @@ impl Handler for Rewrite {
         if let Some(n) = undo.orig_name {
             let mut q = std::mem::take(&mut req.msg.queries);
             if let Some(first) = q.first_mut() {
-                first.set_name(n);
+                first.name = n;
             }
             for qq in q {
                 req.msg.add_query(qq);
@@ -683,7 +683,7 @@ mod tests {
         let mut req = Request::for_test("www.old.example.", RecordType::A);
         let m = Next::new(&chain).serve(&mut req).await.unwrap().into_msg().unwrap();
         assert_eq!(m.queries[0].name().to_ascii(), "www.old.example.");
-        assert_eq!(m.answers[0].name().to_ascii(), "www.old.example.");
+        assert_eq!(m.answers[0].name.to_ascii(), "www.old.example.");
         assert_eq!(req.name(), "www.old.example.");
     }
 

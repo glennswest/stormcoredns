@@ -837,7 +837,7 @@ mod tests {
         let m = q(&k, "web.default.svc.cluster.local.", RecordType::A).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NoError);
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(m.answers[0].data(), Some(RData::A(a)) if a.0 == std::net::Ipv4Addr::new(10, 96, 0, 10)));
+        assert!(matches!(&m.answers[0].data, RData::A(a) if a.0 == std::net::Ipv4Addr::new(10, 96, 0, 10)));
         assert!(m.metadata.authoritative);
         // AAAA → NODATA with SOA
         let m = q(&k, "web.default.svc.cluster.local.", RecordType::AAAA).await;
@@ -851,7 +851,7 @@ mod tests {
         let k = k8s();
         let m = q(&k, "_http._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(m.answers[0].data(), Some(RData::SRV(s)) if s.port() == 80));
+        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.port() == 80));
         assert_eq!(m.additionals.len(), 1);
         let m = q(&k, "_nope._tcp.web.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
@@ -866,10 +866,10 @@ mod tests {
         assert_eq!(m.answers.len(), 1, "only the ready endpoint");
         let m = q(&k, "pg-0.hl.default.svc.cluster.local.", RecordType::A).await;
         assert_eq!(m.answers.len(), 1);
-        assert_eq!(m.answers[0].name().to_ascii(), "pg-0.hl.default.svc.cluster.local.");
+        assert_eq!(m.answers[0].name.to_ascii(), "pg-0.hl.default.svc.cluster.local.");
         let m = q(&k, "_db._tcp.hl.default.svc.cluster.local.", RecordType::SRV).await;
         assert_eq!(m.answers.len(), 1);
-        assert!(matches!(m.answers[0].data(), Some(RData::SRV(s)) if s.target().to_ascii() == "pg-0.hl.default.svc.cluster.local."));
+        assert!(matches!(&m.answers[0].data, RData::SRV(s) if s.target().to_ascii() == "pg-0.hl.default.svc.cluster.local."));
     }
 
     #[tokio::test]
@@ -894,16 +894,16 @@ mod tests {
         let m = q(&k, "10-244-1-99.default.pod.cluster.local.", RecordType::A).await;
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain, "verified mode rejects unknown pod IPs");
         let m = q(&k, "10.0.96.10.in-addr.arpa.", RecordType::PTR).await;
-        assert!(matches!(m.answers[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "web.default.svc.cluster.local."));
+        assert!(matches!(&m.answers[0].data, RData::PTR(p) if p.0.to_ascii() == "web.default.svc.cluster.local."));
         let m = q(&k, "5.0.244.10.in-addr.arpa.", RecordType::PTR).await;
-        assert!(matches!(m.answers[0].data(), Some(RData::PTR(p)) if p.0.to_ascii() == "pg-0.hl.default.svc.cluster.local."));
+        assert!(matches!(&m.answers[0].data, RData::PTR(p) if p.0.to_ascii() == "pg-0.hl.default.svc.cluster.local."));
     }
 
     #[tokio::test]
     async fn external_name() {
         let k = k8s();
         let m = q(&k, "ext.default.svc.cluster.local.", RecordType::CNAME).await;
-        assert!(matches!(m.answers[0].data(), Some(RData::CNAME(c)) if c.0.to_ascii() == "example.org."));
+        assert!(matches!(&m.answers[0].data, RData::CNAME(c) if c.0.to_ascii() == "example.org."));
     }
 
     #[test]

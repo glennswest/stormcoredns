@@ -83,19 +83,19 @@ impl Handler for Dns64 {
         let ttl_cap = m
             .authorities
             .iter()
-            .find_map(|rr| match rr.data() {
-                Some(RData::SOA(s)) => Some(rr.ttl().min(s.minimum())),
+            .find_map(|rr| match &rr.data {
+                RData::SOA(s) => Some(rr.ttl.min(s.minimum())),
                 _ => None,
             })
             .unwrap_or(u32::MAX);
         let mut synthesized = Vec::new();
         for a in a_resp.answers {
-            match a.data() {
-                Some(RData::A(v4)) => {
-                    let ttl = a.ttl().min(ttl_cap);
-                    synthesized.push(Record::from_rdata(a.name().clone(), ttl, RData::AAAA(AAAA(self.synth(v4.0)))));
+            match &a.data {
+                RData::A(v4) => {
+                    let ttl = a.ttl.min(ttl_cap);
+                    synthesized.push(Record::from_rdata(a.name.clone(), ttl, RData::AAAA(AAAA(self.synth(v4.0)))));
                 }
-                Some(RData::CNAME(_)) => synthesized.push(a.clone()),
+                RData::CNAME(_) => synthesized.push(a.clone()),
                 _ => {}
             }
         }

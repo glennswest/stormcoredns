@@ -379,14 +379,14 @@ pub fn minimal_ttl(m: &Message, negative: bool) -> Duration {
             continue;
         }
         if negative {
-            if let Some(RData::SOA(soa)) = r.data() {
-                let t = r.ttl().min(soa.minimum());
+            if let RData::SOA(soa) = &r.data {
+                let t = r.ttl.min(soa.minimum());
                 return Duration::from_secs(t as u64);
             }
         }
         found = true;
-        if r.ttl() < min {
-            min = r.ttl();
+        if r.ttl < min {
+            min = r.ttl;
         }
     }
     if !found {

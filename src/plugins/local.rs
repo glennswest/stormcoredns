@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(m.answers.len(), 1);
         let m = q("5.0.0.127.in-addr.arpa.", RecordType::PTR).await.unwrap();
         assert_eq!(m.metadata.response_code, ResponseCode::NXDomain);
-        assert_eq!(m.authorities[0].name().to_ascii(), "127.in-addr.arpa.");
+        assert_eq!(m.authorities[0].name.to_ascii(), "127.in-addr.arpa.");
         let m = q("0.in-addr.arpa.", RecordType::NS).await.unwrap();
         assert_eq!(m.answers[0].record_type(), RecordType::NS);
         let m = q("1.255.in-addr.arpa.", RecordType::PTR).await.unwrap();

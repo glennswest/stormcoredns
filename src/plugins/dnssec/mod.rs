@@ -21,7 +21,7 @@ pub mod keys;
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use async_trait::async_trait;
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::dnssec::rdata::{DNSSECRData, NSEC};
+use hickory_proto::dnssec::rdata::{DNSSECRData, NSEC};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use crate::plugins::cache::{typify, RespType};
 use keys::DnsKey;
@@ -92,7 +92,7 @@ pub fn rrsets(records: &[Record]) -> Vec<Vec<Record>> {
         if matches!(r.record_type(), RecordType::OPT | RecordType::RRSIG | RecordType::TSIG | RecordType::SIG) {
             continue;
         }
-        let k = (crate::dnsutil::name_str(r.name()), r.record_type());
+        let k = (crate::dnsutil::name_str(&r.name), r.record_type());
         if !map.contains_key(&k) {
             order.push(k.clone());
         }
@@ -107,8 +107,8 @@ fn now_secs() -> u64 {
 
 /// Is every RRSIG still valid at `t`?
 fn valid_at(sigs: &[Record], t: u64) -> bool {
-    sigs.iter().all(|r| match r.data() {
-        Some(RData::DNSSEC(DNSSECRData::RRSIG(s))) => (s.sig_expiration() as u64) > t,
+    sigs.iter().all(|r| match &r.data {
+        RData::DNSSEC(DNSSECRData::RRSIG(s)) => (s.input().sig_expiration.0 as u64) > t,
         _ => true,
     })
 }
@@ -138,7 +138,7 @@ impl Dnssec {
         for k in &self.keys {
             match k.sign_rrset(set, &signer, incep, expir) {
                 Ok(sig) => sigs.push(sig),
-                Err(e) => tracing::warn!("plugin/dnssec: signing {} {}: {}", set[0].name(), set[0].record_type(), e),
+                Err(e) => tracing::warn!("plugin/dnssec: signing {} {}: {}", &set[0].name, set[0].record_type(), e),
             }
         }
         let mut c = self.cache.lock();
@@ -212,7 +212,7 @@ impl Dnssec {
             // referral: sign the DS set, or deny it with an NSEC; the NS set
             // and glue are not ours to sign
             RespType::Delegation => {
-                let ttl = m.authorities.first().map(|r| r.ttl()).unwrap_or(3600);
+                let ttl = m.authorities.first().map(|r| r.ttl).unwrap_or(3600);
                 let ds: Vec<Record> = m.authorities.iter().filter(|r| r.record_type() == RecordType::DS).cloned().collect();
                 let add = if ds.is_empty() { self.nsec(req, zone, kind, ttl, &server, now) } else { self.sign_set(&ds, zone, &server, now) };
                 for r in add {
@@ -227,7 +227,7 @@ impl Dnssec {
                     return;
                 }
                 let soa = ns[0].clone();
-                let ttl = soa.ttl();
+                let ttl = soa.ttl;
                 let mut auth = vec![soa.clone()];
                 auth.extend(self.sign_set(&[soa], zone, &server, now));
                 let nsec = self.nsec(req, zone, kind, ttl, &server, now);
@@ -348,7 +348,7 @@ pub fn setup(c: &mut Controller<'_>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hickory_proto::rr::dnssec::rdata::DS as DsRdata;
+    use hickory_proto::dnssec::rdata::DS as DsRdata;
     use hickory_proto::rr::rdata::{A, NS, SOA};
 
     /// Answers by name prefix: `nx.` NXDOMAIN+SOA, `nodata.` NOERROR+SOA,
@@ -374,7 +374,7 @@ mod tests {
                 let cut = Name::from_ascii(&n).unwrap();
                 m.add_authority(Record::from_rdata(cut.clone(), 3600, RData::NS(NS(Name::from_ascii("ns.other.net.").unwrap()))));
                 if n.starts_with("ds.") {
-                    let ds = DsRdata::new(12345, hickory_proto::rr::dnssec::Algorithm::ECDSAP256SHA256, hickory_proto::rr::dnssec::DigestType::SHA256, vec![1; 32]);
+                    let ds = DsRdata::new(12345, hickory_proto::dnssec::Algorithm::ECDSAP256SHA256, hickory_proto::dnssec::DigestType::SHA256, vec![1; 32]);
                     m.add_authority(Record::from_rdata(cut, 3600, RData::DNSSEC(DNSSECRData::DS(ds))));
                 }
             } else {
@@ -386,7 +386,7 @@ mod tests {
     }
 
     fn dnssec() -> Arc<Dnssec> {
-        let key = keys::generate(hickory_proto::rr::dnssec::Algorithm::ECDSAP256SHA256, "example.org.").unwrap();
+        let key = keys::generate(hickory_proto::dnssec::Algorithm::ECDSAP256SHA256, "example.org.").unwrap();
         Arc::new(Dnssec { zones: vec!["example.org.".into()], keys: vec![Arc::new(key)], cache: Mutex::new(LruCache::new(NonZeroUsize::new(10).unwrap())) })
     }
 
@@ -399,8 +399,8 @@ mod tests {
 
     fn nsec_of(recs: &[Record]) -> (&Record, &NSEC) {
         recs.iter()
-            .find_map(|r| match r.data() {
-                Some(RData::DNSSEC(DNSSECRData::NSEC(n))) => Some((r, n)),
+            .find_map(|r| match &r.data {
+                RData::DNSSEC(DNSSECRData::NSEC(n)) => Some((r, n)),
                 _ => None,
             })
             .expect("an NSEC")
@@ -408,8 +408,8 @@ mod tests {
 
     fn covered(recs: &[Record]) -> Vec<RecordType> {
         recs.iter()
-            .filter_map(|r| match r.data() {
-                Some(RData::DNSSEC(DNSSECRData::RRSIG(s))) => Some(s.type_covered()),
+            .filter_map(|r| match &r.data {
+                RData::DNSSEC(DNSSECRData::RRSIG(s)) => Some(s.input().type_covered),
                 _ => None,
             })
             .collect()
@@ -436,7 +436,7 @@ mod tests {
             let (r, n) = nsec_of(&m.authorities);
             assert!(!n.type_bit_maps().contains(&RecordType::A), "{}: A must not be claimed", name);
             assert!(n.type_bit_maps().contains(&RecordType::AAAA) && n.type_bit_maps().contains(&RecordType::NSEC));
-            assert_eq!(r.ttl(), 300, "NSEC TTL from the SOA");
+            assert_eq!(r.ttl, 300, "NSEC TTL from the SOA");
             assert_eq!(n.next_domain_name().to_ascii(), format!("\\000.{}", name));
             let c = covered(&m.authorities);
             assert!(c.contains(&RecordType::SOA) && c.contains(&RecordType::NSEC));
@@ -465,16 +465,16 @@ mod tests {
     /// RRset it covers (same section, owner and type), as a validator checks.
     /// Returns how many were checked.
     fn verify_all(d: &Dnssec, m: &Message) -> usize {
-        use hickory_proto::rr::dnssec::Verifier;
+        use hickory_proto::dnssec::Verifier;
         let key = &d.keys[0].dnskey;
         let mut n = 0;
         for sec in [&m.answers, &m.authorities, &m.additionals] {
             for r in sec {
-                let Some(RData::DNSSEC(DNSSECRData::RRSIG(sig))) = r.data() else { continue };
-                let set: Vec<Record> = sec.iter().filter(|x| x.name() == r.name() && x.record_type() == sig.type_covered()).cloned().collect();
-                assert!(!set.is_empty(), "RRSIG {} {:?} covers nothing", r.name(), sig.type_covered());
-                key.verify_rrsig(r.name(), hickory_proto::rr::DNSClass::IN, sig, &set)
-                    .unwrap_or_else(|e| panic!("RRSIG {} {:?} does not validate: {}", r.name(), sig.type_covered(), e));
+                let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data else { continue };
+                let set: Vec<Record> = sec.iter().filter(|x| x.name == r.name && x.record_type() == sig.input().type_covered).cloned().collect();
+                assert!(!set.is_empty(), "RRSIG {} {:?} covers nothing", &r.name, sig.input().type_covered);
+                key.verify_rrsig(&r.name, hickory_proto::rr::DNSClass::IN, sig, &set)
+                    .unwrap_or_else(|e| panic!("RRSIG {} {:?} does not validate: {}", &r.name, sig.input().type_covered, e));
                 n += 1;
             }
         }
@@ -506,8 +506,8 @@ mod tests {
         let d = dnssec();
         let req = Request::for_test("www.example.org.", RecordType::A);
         let set = vec![Record::from_rdata(req.qname(), 30, RData::A(A::new(10, 0, 0, 1)))];
-        let exp = |sigs: &[Record]| match sigs[0].data() {
-            Some(RData::DNSSEC(DNSSECRData::RRSIG(s))) => s.sig_expiration(),
+        let exp = |sigs: &[Record]| match &sigs[0].data {
+            RData::DNSSEC(DNSSECRData::RRSIG(s)) => s.input().sig_expiration.0,
             _ => panic!(),
         };
         let t0 = now_secs();

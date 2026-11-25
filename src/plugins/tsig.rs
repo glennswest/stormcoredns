@@ -9,7 +9,7 @@
 //! ```
 //! KEY is base64. A `secret` key works with whatever algorithm the client
 //! signs with, as in CoreDNS; `secrets` files are BIND `key` statements
-//! with an `algorithm`. hickory 0.24 computes HMAC-SHA256/384/512 only, so
+//! with an `algorithm`. hickory computes HMAC-SHA256/384/512 only, so
 //! MD5, SHA1 and SHA224 get BADKEY; AXFR replies are not signed.
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
@@ -17,10 +17,9 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use base64::Engine;
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::dnssec::rdata::tsig::{TsigAlgorithm, TSIG};
-use hickory_proto::rr::dnssec::rdata::DNSSECRData;
-use hickory_proto::rr::dnssec::tsig::TSigner;
-use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
+use hickory_proto::rr::rdata::tsig::{make_tsig_record, TsigAlgorithm, TsigError, TSIG};
+use hickory_proto::rr::tsig::TSigner;
+use hickory_proto::rr::{Name, RecordType};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -40,9 +39,6 @@ pub struct Tsig {
 }
 
 const FUDGE: u16 = 300;
-const BADSIG: u16 = 16;
-const BADKEY: u16 = 17;
-const BADTIME: u16 = 18;
 
 fn parse_algorithm(s: &str) -> Result<TsigAlgorithm> {
     Ok(match s.trim_end_matches('.').to_ascii_lowercase().as_str() {
@@ -84,11 +80,14 @@ pub fn parse_secrets_file(text: &str) -> Result<Vec<Secret>> {
     Ok(out)
 }
 
-fn tsig_of(m: &Message) -> Option<(&Record, &TSIG)> {
-    m.signature().iter().chain(m.additionals.iter()).find_map(|r| match r.data() {
-        Some(RData::DNSSEC(DNSSECRData::TSIG(t))) => Some((r, t)),
-        _ => None,
-    })
+/// The request's TSIG: its key name and RDATA (hickory keeps it out of the
+/// additional section).
+fn tsig_of(m: &Message) -> Option<(&Name, &TSIG)> {
+    m.signature().map(|r| (&r.name, &r.data))
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 impl Tsig {
@@ -101,14 +100,11 @@ impl Tsig {
     }
 
     /// Build an unsigned-error response carrying a TSIG with `error`.
-    fn tsig_error(&self, req: &Request, keyname: &Name, alg: TsigAlgorithm, error: u16) -> Message {
+    fn tsig_error(&self, req: &Request, keyname: &Name, alg: TsigAlgorithm, error: TsigError) -> Message {
         let mut m = req.new_reply();
         m.metadata.response_code = ResponseCode::NotAuth;
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let t = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.metadata.id, error, Vec::new());
-        let mut r = Record::from_rdata(keyname.clone(), 0, RData::DNSSEC(DNSSECRData::TSIG(t)));
-        r.set_dns_class(DNSClass::ANY);
-        m.add_tsig(r);
+        let t = TSIG::new(alg, now_secs(), FUDGE, Vec::new(), req.msg.metadata.id, Some(error), Vec::new());
+        m.set_signature(Box::new(make_tsig_record(keyname.clone(), t)));
         m
     }
 
@@ -116,14 +112,12 @@ impl Tsig {
     fn sign_response(&self, req: &Request, secret: &Secret, req_mac: &[u8], m: &mut Message) -> Result<()> {
         let alg = secret.algorithm.clone().unwrap_or(TsigAlgorithm::HmacSha256);
         let signer = TSigner::new(secret.key.clone(), alg.clone(), secret.name.clone(), FUDGE).map_err(|e| anyhow!("{}", e))?;
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let pre = TSIG::new(alg, now, FUDGE, Vec::new(), req.msg.metadata.id, 0, Vec::new());
-        let tbs = hickory_proto::rr::dnssec::rdata::tsig::message_tbs(Some(req_mac), m, &pre, &secret.name).map_err(|e| anyhow!("{}", e))?;
+        // RFC 8945 4.3.1: request MAC, the response without its TSIG, then the TSIG variables
+        let pre = TSIG::new(alg, now_secs(), FUDGE, Vec::new(), req.msg.metadata.id, None, Vec::new());
+        let unsigned = m.to_vec().map_err(|e| anyhow!("{}", e))?;
+        let tbs = signer.encode_response_tbs(req_mac, &unsigned, &pre).map_err(|e| anyhow!("{}", e))?;
         let mac = signer.sign(&tbs).map_err(|e| anyhow!("{}", e))?;
-        let t = pre.set_mac(mac);
-        let mut r = Record::from_rdata(secret.name.clone(), 0, RData::DNSSEC(DNSSECRData::TSIG(t)));
-        r.set_dns_class(DNSClass::ANY);
-        m.add_tsig(r);
+        m.set_signature(Box::new(make_tsig_record(secret.name.clone(), pre.set_mac(mac))));
         Ok(())
     }
 }
@@ -139,7 +133,7 @@ impl Handler for Tsig {
         if crate::plugin::zones_match(&self.zones, &qname).is_none() {
             return next.serve(req).await;
         }
-        let tsig = tsig_of(&req.msg).map(|(r, t)| (crate::dnsutil::name_str(r.name()), t.algorithm().clone(), r.name().clone()));
+        let tsig = tsig_of(&req.msg).map(|(n, t)| (crate::dnsutil::name_str(n), t.algorithm.clone(), n.clone()));
         let Some((keyname, alg, keyname_n)) = tsig else {
             if self.required(req.qtype()) {
                 let mut m = req.new_reply();
@@ -149,29 +143,32 @@ impl Handler for Tsig {
             return next.serve(req).await;
         };
         let Some(mut secret) = self.secrets.get(&keyname).cloned() else {
-            return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY)));
+            return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadKey)));
         };
         match &secret.algorithm {
             None => secret.algorithm = Some(alg.clone()),
-            Some(a) if *a != alg => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY))),
+            Some(a) if *a != alg => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadKey))),
             Some(_) => {}
         }
         let Some(raw) = req.raw.clone() else {
-            return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADSIG)));
+            return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadSig)));
         };
         let signer = match TSigner::new(secret.key.clone(), alg.clone(), secret.name.clone(), FUDGE) {
             Ok(s) => s,
-            Err(_) => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, BADKEY))),
+            Err(_) => return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadKey))),
         };
-        let (req_mac, _range, _time) = match signer.verify_message_byte(None, &raw, true) {
+        let (req_mac, _time, window) = match signer.verify_message_byte(&raw, None, true) {
             Ok(v) => v,
             Err(e) => {
-                let msg = e.to_string();
-                let code = if msg.contains("time") { BADTIME } else { BADSIG };
                 tracing::debug!("plugin/tsig: verification failed for {}: {}", keyname, e);
-                return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, code)));
+                return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadSig)));
             }
         };
+        // RFC 8945 5.2.3: the MAC is good; the time must be within the fudge
+        if !(window.start..=window.end).contains(&now_secs()) {
+            tracing::debug!("plugin/tsig: {} signed outside the time window {:?}", keyname, window);
+            return Ok(Reply::Msg(self.tsig_error(req, &keyname_n, alg, TsigError::BadTime)));
+        }
         req.tsig_verified = Some(secret.name.clone());
         // strip the TSIG before handing the query on
         let _ = req.msg.take_signature();

@@ -108,7 +108,7 @@ impl Handler for Autopath {
                     let mut out = req.new_reply();
                     out.metadata.authoritative = m.metadata.authoritative;
                     out.metadata.recursion_available = m.metadata.recursion_available;
-                    let ttl = m.answers.iter().map(|r| r.ttl()).min().unwrap_or(0);
+                    let ttl = m.answers.iter().map(|r| r.ttl).min().unwrap_or(0);
                     out.add_answer(Record::from_rdata(orig.clone(), ttl, RData::CNAME(CNAME(cname))));
                     for r in &m.answers {
                         out.add_answer(r.clone());

@@ -1089,7 +1089,7 @@ dname   IN A    192.0.2.8
         hashes.sort();
         for (i, hh) in hashes.iter().enumerate() {
             let next = hashes[(i + 1) % hashes.len()].clone();
-            let rd = NSEC3::new(Nsec3HashAlgorithm::SHA1, false, 1, salt.clone(), next, vec![RecordType::A]);
+            let rd = NSEC3::try_new(Nsec3HashAlgorithm::SHA1, false, 1, salt.clone(), next, vec![RecordType::A]).unwrap();
             recs.push(Record::from_rdata(n(&format!("{}.example.org.", b32hex(hh))), 300, RData::DNSSEC(DNSSECRData::NSEC3(rd))));
         }
         Zone::from_records("example.org.", recs).unwrap()

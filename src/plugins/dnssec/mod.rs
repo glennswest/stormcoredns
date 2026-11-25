@@ -473,7 +473,7 @@ mod tests {
                 let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data else { continue };
                 let set: Vec<Record> = sec.iter().filter(|x| x.name == r.name && x.record_type() == sig.input().type_covered).cloned().collect();
                 assert!(!set.is_empty(), "RRSIG {} {:?} covers nothing", &r.name, sig.input().type_covered);
-                key.verify_rrsig(&r.name, hickory_proto::rr::DNSClass::IN, sig, &set)
+                key.verify_rrsig(&r.name, hickory_proto::rr::DNSClass::IN, sig, set.iter())
                     .unwrap_or_else(|e| panic!("RRSIG {} {:?} does not validate: {}", &r.name, sig.input().type_covered, e));
                 n += 1;
             }

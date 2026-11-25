@@ -55,7 +55,7 @@ url = "2"
 percent-encoding = "2"
 
 # DNS wire format, zone file parsing, DNSSEC
-hickory-proto = { version = "0.24", default-features = false, features = ["tokio-runtime", "dnssec-ring", "text-parsing"] }
+hickory-proto = { version = "0.26.4", default-features = false, features = ["std", "dnssec-ring"] }
 
 # TLS / HTTP / QUIC / gRPC
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

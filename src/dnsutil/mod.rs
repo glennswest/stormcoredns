@@ -20,6 +20,14 @@ pub const MIN_MSG_SIZE: usize = 512;
 pub const MAX_MSG_SIZE: usize = 65535;
 
 /// Lowercase + trailing dot.
+/// TXT RDATA for `text`, split into 255-octet character-strings as
+/// CoreDNS's `split255` does (a longer string is not valid on the wire).
+pub fn txt(text: &str) -> Result<hickory_proto::rr::rdata::TXT> {
+    let bytes = text.as_bytes();
+    let parts: Vec<Box<[u8]>> = if bytes.is_empty() { vec![Box::from(&b""[..])] } else { bytes.chunks(255).map(Box::from).collect() };
+    hickory_proto::rr::rdata::TXT::try_new(parts.into_iter()).map_err(|e| anyhow!("TXT {:?}: {}", text, e))
+}
+
 pub fn fqdn(s: &str) -> String {
     let mut s = s.to_ascii_lowercase();
     if !s.ends_with('.') {
@@ -515,6 +523,16 @@ mod tests {
         assert_eq!(parse_upstream("[::1]:5353").unwrap().addr, "[::1]:5353");
         assert_eq!(parse_upstream("::1").unwrap().addr, "[::1]:53");
         assert_eq!(parse_upstream("https://dns.google").unwrap().addr, "dns.google:443");
+    }
+
+    #[test]
+    fn txt_splits_at_255_octets() {
+        let long = "x".repeat(600);
+        let t = txt(&long).unwrap();
+        assert_eq!(t.txt_data.iter().map(|p| p.len()).collect::<Vec<_>>(), vec![255, 255, 90]);
+        assert_eq!(txt("1.1.0").unwrap().txt_data.len(), 1);
+        assert_eq!(txt("").unwrap().txt_data.len(), 1);
+        assert!(txt(&"y".repeat(70000)).is_err(), "past 65535 octets of RDATA");
     }
 
     #[test]

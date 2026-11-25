@@ -4,7 +4,6 @@
 
 use crate::plugin::{Controller, DnsResult, Handler, Next, Reply, Request};
 use async_trait::async_trait;
-use hickory_proto::rr::rdata::TXT;
 use hickory_proto::rr::{DNSClass, RData, Record, RecordType};
 use std::sync::Arc;
 
@@ -33,7 +32,7 @@ impl Handler for Chaos {
         let mut m = req.new_reply();
         m.metadata.authoritative = true;
         for t in texts {
-            let mut r = Record::from_rdata(req.qname(), 0, RData::TXT(TXT::new(vec![t])));
+            let mut r = Record::from_rdata(req.qname(), 0, RData::TXT(crate::dnsutil::txt(&t).map_err(|e| crate::plugin::error("chaos", e))?));
             r.dns_class = DNSClass::CH;
             m.add_answer(r);
         }

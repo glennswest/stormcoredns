@@ -1076,12 +1076,12 @@ dname   IN A    192.0.2.8
         let mut recs = vec![
             Record::from_rdata(n("example.org."), 3600, RData::SOA(SOA::new(n("ns1.example.org."), n("h.example.org."), 1, 2, 3, 4, 300))),
             Record::from_rdata(n("www.example.org."), 3600, RData::A(A::new(192, 0, 2, 1))),
-            Record::from_rdata(n("a.b.example.org."), 3600, RData::TXT(TXT::new(vec!["x".into()]))),
+            Record::from_rdata(n("a.b.example.org."), 3600, RData::TXT(TXT::try_from("x".to_string()).unwrap())),
             Record::from_rdata(n("*.w.example.org."), 3600, RData::A(A::new(192, 0, 2, 9))),
             Record::from_rdata(
                 n("example.org."),
                 0,
-                RData::DNSSEC(DNSSECRData::NSEC3PARAM(NSEC3PARAM::new(Nsec3HashAlgorithm::SHA1, false, 1, salt.clone()))),
+                RData::DNSSEC(DNSSECRData::NSEC3PARAM(NSEC3PARAM::try_new(Nsec3HashAlgorithm::SHA1, false, 1, salt.clone()).unwrap())),
             ),
         ];
         let owners = ["example.org.", "www.example.org.", "b.example.org.", "a.b.example.org.", "w.example.org.", "*.w.example.org."];

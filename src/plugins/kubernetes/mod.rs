@@ -27,7 +27,7 @@ use crate::plugin::{error, Controller, DnsResult, Handler, Next, Reply, Request}
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::rdata::{A, AAAA, CNAME, NS, PTR, SOA, SRV, TXT};
+use hickory_proto::rr::rdata::{A, AAAA, CNAME, NS, PTR, SOA, SRV};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -354,7 +354,7 @@ impl Kubernetes {
             }
             Parsed::DnsVersion => {
                 if matches!(qtype, RecordType::TXT | RecordType::ANY) {
-                    m.add_answer(Record::from_rdata(qname.clone(), 28800, RData::TXT(TXT::new(vec!["1.1.0".to_string()]))));
+                    m.add_answer(Record::from_rdata(qname.clone(), 28800, RData::TXT(dnsutil::txt("1.1.0")?)));
                     Ok(Some(m))
                 } else {
                     Ok(Some(self.nodata(req, zone)))

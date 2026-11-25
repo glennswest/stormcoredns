@@ -19,7 +19,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use etcd_client::{Client, ConnectOptions, GetOptions};
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::rdata::{A, AAAA, CNAME, MX, NS, PTR, SOA, SRV, TXT};
+use hickory_proto::rr::rdata::{A, AAAA, CNAME, MX, NS, PTR, SOA, SRV};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use serde::Deserialize;
 use std::net::IpAddr;
@@ -276,7 +276,7 @@ impl Etcd {
             }
             RecordType::TXT => {
                 for s in services.iter().filter(|s| !s.text.is_empty()) {
-                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::TXT(TXT::new(vec![s.text.clone()]))));
+                    m.add_answer(Record::from_rdata(name.clone(), s.ttl(), RData::TXT(dnsutil::txt(&s.text)?)));
                 }
             }
             RecordType::PTR => {

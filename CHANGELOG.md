@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-11-25 (#34)
+- **fix(deps):** hickory-proto 0.24.4 → 0.26.4 for CVE-2026-123570 (a query or upstream reply with ANCOUNT/NSCOUNT/ARCOUNT 65535 made the decoder allocate ~18 MB; fixed in 0.26.2). 0.26.3+ also fixes CVE-2026-123572/123573/123574 (CVE-123574 is a zone-file parser panic, which matters to `file`/`auto`), RUSTSEC-2026-0490 (zone lexer panic on a 4096+ character token) and a TSIG integer underflow. 0.24 and 0.25 have no backport.
+- **refactor:** 0.26 moves the message header into `Message::metadata`, sections and record name/TTL/class/data into public fields, rdata getters into fields, DNSSEC under `hickory_proto::dnssec` (signing keys are `SigningKey` objects; RRSIG from `SigInput` + `TBS`), and TSIG into `RData::TSIG` / `Message::signature`. Every call site moved; no behaviour change intended.
+- **fix:** `tsig` checks the request's time itself (0.26's verifier no longer does): outside the fudge → BADTIME, as before.
+- **chore:** dropped `#![allow(deprecated)]` (it was for 0.24's `Message::edns()`); `NSEC3::try_new` replaces the deprecated `NSEC3::new`.
+
 ### 2026-11-25 (#33)
 - **fix:** `/ready` was 200 during the first start while `kubernetes` waited (up to `startup_timeout`) for an API that never answered. `ready` serves from its startup hook, but its plugin list was published only once every startup hook had ended, so the list was empty. On the first start the new instance's plugins now answer for readiness before the startup hooks run; a reload still keeps the running instance's list until the new one serves (#7). With no apiserver `/ready` is 503 `kubernetes` during the startup wait and after it, as in CoreDNS. Test `ready_is_503_while_kubernetes_has_not_synced`; verified by sc-build at fa7260f, and the same test without the fix got 200 during startup.
 

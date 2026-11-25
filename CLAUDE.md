@@ -246,16 +246,12 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] fix: `plugins::starting` → `ready::starting` publishes the new plugins before the startup hooks on a first start (a reload keeps the old list); test `ready_is_503_while_kubernetes_has_not_synced` (dead API, `startup_timeout 3s`: 503 `kubernetes` during and after the wait); instance tests take turns (`INSTANCE_TESTS`)
 - [x] negative control (`SC_BUILD_EXPECT_FAIL=1`, branch wip/33-control without `starting`, deleted): `/ready` (200, "OK") during startup; sc-build green at fa7260f (job ca4fd32ebd: 98 tests, no warnings); stage build a046102d4c13; `shipped` with the kube-dns endpoints proof
 
-### Paused — #34 hickory-proto 0.24.4 → 0.26.x (P1, CVE-2026-123570; 2026-11-25)
-Target 0.26.3+ (research 2026-11-14: CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); latest is 0.26.4. No 0.24/0.25 backport exists.
-0.26 is a large API break: `Message` getters/setters → public fields (`metadata.id`, `queries`, `answers`, `authorities`, `additionals`, `edns`, `signature`), `Message::new(id, type, opcode)`; `Record` → public fields (`name`, `ttl`, `dns_class`, `data` not optional); features `tokio-runtime`/`text-parsing` are gone (zone `Parser` is under `std`); DNSSEC moved to `hickory_proto::dnssec` (new signing-key API); TSIG moved too. No cargo on the session VM, so each compile round is an sc-build `cargo check`.
-- [x] Cargo.toml (root + test/) → 0.26.4, features `std`, `dnssec-ring`; Cargo.lock from the build VM's `cargo update` diff (round 2, job c009f60381)
-- Round 2 (b326ad0): cargo stopped at the test crate's 7 errors — next round use `cargo check --keep-going`. rdata types now have public fields, not getters (SRV `port`/`target`, SOA `minimum`/…, TXT `txt_data`): convert those call sites too
-- [ ] Message/Metadata/Query/Edns call sites
-- [ ] Record/RData/Name call sites
-- [ ] dnssec + sign (keys, RRSIG, NSEC/NSEC3, DS, verifier), tsig
-- [ ] zone Parser (`file`, `auto`, `template`), test crate
-- [ ] sc-build green, no warnings; `cargo tree -i hickory-proto` shows only ≥ 0.26.3; stage `coredns`; `shipped` (closes when a published release carries it)
+### In progress — #34 hickory-proto 0.24.4 → 0.26.4 (P1, CVE-2026-123570; 2026-11-25)
+Target 0.26.3+ (CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); 0.26.4 used. No 0.24/0.25 backport exists. Work on branch `wip/34-hickory`, merged to main once green.
+- [x] Cargo.toml (root + test/) → 0.26.4 (`std`, `dnssec-ring`); Cargo.lock from the build VM's `cargo update` diff (no cargo on the session VM)
+- [x] call sites: Message header → `metadata`, sections/EDNS → fields, `take_*` → `mem::take`, Record and rdata getters → fields, DNSSEC paths → `hickory_proto::dnssec`, signing via `SigningKey`/`SigInput`/`TBS`, TSIG via `RData::TSIG`/`Message::signature` (BADTIME now checked by `tsig`), `RecordType::DNAME`/`CERT` exist
+- [x] compile rounds on build VMs (`cargo check --keep-going`): round 5 clean; full test run at 2289074 97/98 (DNAME type) → fixed
+- [ ] sc-build green (build + tests, no warnings), `cargo tree -i hickory-proto` only 0.26.4; merge to main; stage `coredns`; `shipped` (the issue closes when a published release carries it)
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

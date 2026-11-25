@@ -241,6 +241,16 @@ CoreDNS 1.12 `reload.go`: takes the new hash before restarting (no retry of the 
 - [x] sc-build green at d34a85a (job 8c0d3c167a); #41 closed
 - Staging `coredns` at d34a85a was refused (403: "coredns is not built from glennswest/stormcoredns"; coredns missing from `component list`, though #39 staged earlier the same day) — sent to the master with `stormcentral note`
 
+### In progress — #34 hickory-proto 0.24.4 → 0.26.x (P1, CVE-2026-123570; 2026-11-25)
+Target 0.26.3+ (research 2026-11-14: CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3); latest is 0.26.4. No 0.24/0.25 backport exists.
+0.26 is a large API break: `Message` getters/setters → public fields (`metadata.id`, `queries`, `answers`, `authorities`, `additionals`, `edns`, `signature`), `Message::new(id, type, opcode)`; `Record` → public fields (`name`, `ttl`, `dns_class`, `data` not optional); features `tokio-runtime`/`text-parsing` are gone (zone `Parser` is under `std`); DNSSEC moved to `hickory_proto::dnssec` (new signing-key API); TSIG moved too. No cargo on the session VM, so each compile round is an sc-build `cargo check`.
+- [ ] Cargo.toml (root + test/) → 0.26.4, features `std`, `dnssec-ring`; Cargo.lock from a build VM (no cargo here)
+- [ ] Message/Metadata/Query/Edns call sites
+- [ ] Record/RData/Name call sites
+- [ ] dnssec + sign (keys, RRSIG, NSEC/NSEC3, DS, verifier), tsig
+- [ ] zone Parser (`file`, `auto`, `template`), test crate
+- [ ] sc-build green, no warnings; `cargo tree -i hickory-proto` shows only ≥ 0.26.3; stage `coredns`; `shipped` (closes when a published release carries it)
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)

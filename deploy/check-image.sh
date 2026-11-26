@@ -51,7 +51,7 @@ echo "ok: -plugins lists kubernetes"
 # whoami.example. A (no dig on a build VM).
 port=$((20000 + RANDOM % 20000))
 printf '.:%s {\n    bind 127.0.0.1\n    whoami\n}\n' "$port" > "$work/Corefile"
-"$out/coredns" -conf "$work/Corefile" -q & pid=$!
+"$out/coredns" -conf "$work/Corefile" > "$work/coredns.log" 2>&1 & pid=$!
 trap 'kill $pid 2>/dev/null || true; rm -rf "$work"' EXIT
 cat > "$work/ask.py" <<'PY'
 import socket, sys
@@ -63,11 +63,20 @@ assert r[:2] == b"\x12\x34" and r[3] & 0x0f == 0 and int.from_bytes(r[6:8], "big
 print(f"NOERROR, {int.from_bytes(r[6:8], 'big')} answer(s), {len(r)} bytes")
 PY
 ans=""
-for _ in $(seq 50); do
-    ans=$(python3 "$work/ask.py" "$port" 2>/dev/null) && break
+command -v python3 >/dev/null || fail "no python3 on this machine for the UDP query"
+for _ in $(seq 100); do
+    ans=$(python3 "$work/ask.py" "$port" 2>"$work/ask.err") && break
+    ans=""
+    kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
 done
-[ -n "$ans" ] || fail "no answer from /coredns on 127.0.0.1:$port"
+if [ -z "$ans" ]; then
+    echo "--- Corefile"; cat "$work/Corefile"
+    echo "--- coredns log"; cat "$work/coredns.log"
+    echo "--- last query error"; cat "$work/ask.err"
+    kill -0 "$pid" 2>/dev/null && echo "(coredns still running)" || echo "(coredns exited)"
+    fail "no answer from /coredns on 127.0.0.1:$port"
+fi
 echo "ok: /coredns answers whoami over UDP: $ans"
 
 # Same commit, same bytes: a second build into a fresh OUT.

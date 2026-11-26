@@ -260,11 +260,12 @@ Target 0.26.3+ (CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3);
 - [x] removing `#![allow(deprecated)]` surfaced `TXT::new`/`NSEC3PARAM::new`: now `dnsutil::txt` (255-octet strings, as CoreDNS `split255`) and `try_new`
 - [x] sc-build green at 136f571 (job c6a197d7e5: 99+8 tests, no warnings; `cargo tree -i hickory-proto` → only v0.26.4); main fast-forwarded; `coredns` staged; `shipped` — the issue closes when a published release carries it (compliance-operations#69)
 
-### In progress — #46 the `coredns` golden built here (2026-11-26)
+### Done — #46 the `coredns` golden built here (2026-11-26)
 stormcentral#1836: stage mode retired; each component builds its own image.
 - [x] `deploy/build-image.sh coredns OUT` = the stage's recipe (stormcos f7f7ccb `build-goldens.sh` `if wanted coredns` + `golden_from_dir`): `cargo build --release --locked --target x86_64-unknown-linux-musl`; tree `stormcoredns` 0755, `coredns -> stormcoredns`, `etc/coredns/`, `proc sys dev`, `tmp` 1777; x86_64 only; other names exit 2. `deploy/build-golden.sh` execs it. Test container (test/) unchanged
 - [x] `deploy/check-image.sh`: refusals, the exact tree, static x86-64, `/coredns -version`, a UDP whoami answer, same bytes twice
-- [ ] sc-build green; issue comment for the master's flip (`component edit coredns --set kind=tree`); stormcos PR deleting the stage block after the flip
+- [x] sc-build green at 80c4727 (20261126-224417-80c4727e: workspace build + tests, test/build.sh, check-image PASS). The first two runs failed on the check itself (whoami's records are in the additional section, as in CoreDNS); #47/#48 closed
+- [x] ready for the flip posted on stormcentral#1836 (`component edit coredns --set kind=tree`, the master's); stormcos#1668 lists the stage lines to delete after it (and `coredns-probes.sh` needing the golden's binary). Until the flip, ship with `component stage coredns`
 
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):

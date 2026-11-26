@@ -13,16 +13,16 @@ No container image or registry is involved. (The mkube registry used for
 
 | | |
 |---|---|
-| golden | `coredns`, a special golden built by stormcos's builder in stage mode |
-| request a build | `stormcentral component stage coredns --url http://stormcentral.g8.lo` after the commit is pushed |
-| source | this repo at the pushed commit (`STORMCOREDNS_SRC`), recorded as `stormcoredns@<sha>` |
-| build | `cargo build --release --target <musl triple>` on the build box, unprivileged |
-| contents | `/stormcoredns` (static binary), `/coredns → stormcoredns`, empty `/etc/coredns/` |
-| size | 32M golden |
+| golden | `coredns`, built by this repo's `deploy/build-image.sh coredns OUT` (#46; stormcentral's `tree` contract, entry `deploy/build-golden.sh`) |
+| request a build | `stormcentral component build coredns --url http://stormcentral.g8.lo` after the commit is pushed (until the registry row is flipped from stage, stormcentral#1836: `component stage coredns`, the same tree from stormcos's `build-goldens.sh`) |
+| source | this repo at the pushed commit, on a fresh build VM |
+| build | `cargo build --release --locked --target x86_64-unknown-linux-musl`, unprivileged; x86_64 only |
+| contents | `/stormcoredns` (static binary, 0755), `/coredns → stormcoredns`, empty `/etc/coredns/`, `proc sys dev`, `tmp` 1777 — held to that by `deploy/check-image.sh` |
+| size | sized from the content by stormcentral (the stage made 32M) |
 | on the node | cloned from `pallet:system1/coredns`, mounted at `/pallets/coredns` |
 
 If stormcoredns fails to build, the release has no `coredns` golden. The
-builder deliberately has no upstream CoreDNS fallback. The workflow for
+recipe deliberately has no upstream CoreDNS fallback. The workflow for
 goldens is in stormcos `docs/goldens.md`.
 
 ## The manifest stormcos runs

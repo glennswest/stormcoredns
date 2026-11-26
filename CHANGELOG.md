@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-11-26 (#46)
+- **build:** the `coredns` golden is built here: `deploy/build-image.sh coredns OUT` (entered as `deploy/build-golden.sh`, stormcentral's `tree` contract) is stormcos's stage recipe moved unchanged — `cargo build --release --locked --target x86_64-unknown-linux-musl`, tree `stormcoredns` 0755, `coredns -> stormcoredns`, `etc/coredns/`, `proc sys dev`, `tmp` 1777. x86_64 only; another name or `GOLDEN_ARCH` exits 2. `deploy/check-image.sh` holds the tree to the stage's and runs the binary. A stormcos commit no longer needs to rebuild it (stormcentral#1836).
+
 ### 2026-11-25 (#34)
 - **fix(deps):** hickory-proto 0.24.4 → 0.26.4 for CVE-2026-123570 (a query or upstream reply with ANCOUNT/NSCOUNT/ARCOUNT 65535 made the decoder allocate ~18 MB; fixed in 0.26.2). 0.26.3+ also fixes CVE-2026-123572/123573/123574 (CVE-123574 is a zone-file parser panic, which matters to `file`/`auto`), RUSTSEC-2026-0490 (zone lexer panic on a 4096+ character token) and a TSIG integer underflow. 0.24 and 0.25 have no backport.
 - **refactor:** 0.26 moves the message header into `Message::metadata`, sections and record name/TTL/class/data into public fields, rdata getters into fields, DNSSEC under `hickory_proto::dnssec` (signing keys are `SigningKey` objects; RRSIG from `SigInput` + `TBS`), and TSIG into `RData::TSIG` / `Message::signature`. Every call site moved; no behaviour change intended.

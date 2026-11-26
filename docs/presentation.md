@@ -194,20 +194,22 @@ stormcoredns -conf FILE        # default "Corefile"
 
 ## How it ships
 
-**The `coredns` golden**, a *special* golden built by stormcos's builder in
-stage mode:
+**The `coredns` golden**, built from this repo's own recipe,
+`deploy/build-image.sh coredns OUT` (#46: stormcos's stage mode is retired):
 
 ```bash
-sc-build                                                     # build + tests on a build VM, after git push
-stormcentral component stage coredns --url http://stormcentral.g8.lo
+sc-build 'deploy/check-image.sh'                              # build + check the tree on a build VM, after git push
+stormcentral component build coredns --url http://stormcentral.g8.lo
 ```
 
-1. The builder fetches this repo at the pushed commit and runs
-   `cargo build --release --target <musl>`.
-2. It stages `/stormcoredns`, a `/coredns` symlink and `/etc/coredns/`, a 32M
-   golden recorded as `stormcoredns@<sha>`.
-3. It seals the golden into forge and files a stormcos release request. The
-   latest is `golden-coredns-0f272e81c6e0` (stormcos#107).
+1. stormcentral fetches this repo at the pushed commit on a fresh build VM and
+   runs `deploy/build-golden.sh coredns OUT`:
+   `cargo build --release --locked --target x86_64-unknown-linux-musl`.
+2. The tree is `/stormcoredns`, a `/coredns` symlink, `/etc/coredns/` and the
+   runtime mountpoints; the golden is sized from it, with an SBOM.
+3. The sealed golden goes into the next stormcos release. Until the registry
+   row is flipped from stage (stormcentral#1836), the stage builds the same
+   tree.
 
 There is **no container image and no registry** on this path, and **no
 upstream fallback**: if stormcoredns does not build, the release has no
@@ -225,7 +227,7 @@ upstream fallback**: if stormcoredns does not build, the release has no
   than `/etc/resolv.conf`, which would point back at itself and loop.
 - **Reload.** The `reload` plugin re-hashes the Corefile every 15–30 s, and
   SIGHUP does the same.
-- **Update.** Push, run `sc-build`, stage the golden, and the next stormcos
+- **Update.** Push, run `sc-build`, build the golden, and the next stormcos
   release carries it.
 - **Outside stormcos.** A `Containerfile` (FROM scratch) and
   `deploy/kubernetes/coredns.yaml` are provided, but no registry is published.

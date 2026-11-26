@@ -177,19 +177,22 @@ serves on 1053 with health, ready and metrics on 18080, 18181 and 19153.
 
 ## Shipping
 
-stormcoredns ships as the **`coredns` golden**, a special golden built by
-stormcos's builder (`deploy/build-goldens.sh`) in stage mode:
+stormcoredns ships as the **`coredns` golden**, built from this repo's own
+recipe, `deploy/build-image.sh coredns OUT` (#46; stormcentral runs it as
+`deploy/build-golden.sh coredns OUT` on a fresh build VM):
 
 ```bash
-stormcentral component stage coredns --url http://stormcentral.g8.lo
+stormcentral component build coredns --url http://stormcentral.g8.lo
 ```
 
-The builder fetches this repo at its pushed commit
-(`STORMCOREDNS_SRC=stormcoredns`, stormcentral `src/goldens.rs`) and runs
-`cargo build --release --target <musl>`. It stages the binary at
-`/stormcoredns` with a `/coredns` symlink, records it as
-`stormcoredns@<sha>`, and seals a 32M golden that nodes mount at
-`/pallets/coredns`. stormcos's `deploy/manifests/80-coredns.yaml` runs
+The recipe runs `cargo build --release --locked --target
+x86_64-unknown-linux-musl` and writes the tree: `/stormcoredns` with a
+`/coredns` symlink, an empty `/etc/coredns/`, and `proc sys dev tmp`.
+stormcentral seals it as a golden sized from the content (with
+`SBOM/crates.csv`) that nodes mount at `/pallets/coredns`.
+`deploy/check-image.sh` checks the tree. Until stormcentral flips the
+`coredns` row from stage to `tree` (stormcentral#1836), stormcos's stage
+mode still builds the same tree (`stormcentral component stage coredns`). stormcos's `deploy/manifests/80-coredns.yaml` runs
 `command: ["/coredns"]` from `image: coredns`. There is no container image or
 registry on this path, and no upstream CoreDNS fallback: if stormcoredns does
 not build, the release has no `coredns` golden. How it is deployed is in

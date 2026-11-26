@@ -24,13 +24,19 @@ sc-build 'cargo test cache'     # any command
 
 `build.rs` needs `protoc` (tonic-build for `proto/dns.proto`).
 
-It ships as the **`coredns` golden**, built by stormcos's builder in stage
-mode (special golden; stormcentral `src/goldens.rs` maps it to
-`STORMCOREDNS_SRC`). When an issue's work is pushed and sc-build passes:
+It ships as the **`coredns` golden**. Its recipe is this repo's
+`deploy/build-image.sh coredns OUT` (entry point `deploy/build-golden.sh`,
+stormcentral's `tree` contract; checked by `deploy/check-image.sh`), moved
+here from stormcos's stage mode in #46 (stormcentral#1836). Once the master
+flips the registry row to `tree`, a pushed and sc-build-green commit ships with:
 
 ```bash
-stormcentral component stage coredns --url http://stormcentral.g8.lo
+stormcentral component build coredns --url http://stormcentral.g8.lo
 ```
+
+Until the flip the stage still builds it (`stormcentral component stage
+coredns`, stormcos `deploy/build-goldens.sh`, `STORMCOREDNS_SRC`), from the
+same recipe.
 
 No image registry is involved (the mkube registry was retired 2026-08-27);
 `Containerfile` and `deploy/kubernetes/coredns.yaml` are for non-stormcos
@@ -254,8 +260,13 @@ Target 0.26.3+ (CVE-2026-123574 and RUSTSEC-2026-0490 are fixed only in 0.26.3);
 - [x] removing `#![allow(deprecated)]` surfaced `TXT::new`/`NSEC3PARAM::new`: now `dnsutil::txt` (255-octet strings, as CoreDNS `split255`) and `try_new`
 - [x] sc-build green at 136f571 (job c6a197d7e5: 99+8 tests, no warnings; `cargo tree -i hickory-proto` → only v0.26.4); main fast-forwarded; `coredns` staged; `shipped` — the issue closes when a published release carries it (compliance-operations#69)
 
+### In progress — #46 the `coredns` golden built here (2026-11-26)
+stormcentral#1836: stage mode retired; each component builds its own image.
+- [x] `deploy/build-image.sh coredns OUT` = the stage's recipe (stormcos f7f7ccb `build-goldens.sh` `if wanted coredns` + `golden_from_dir`): `cargo build --release --locked --target x86_64-unknown-linux-musl`; tree `stormcoredns` 0755, `coredns -> stormcoredns`, `etc/coredns/`, `proc sys dev`, `tmp` 1777; x86_64 only; other names exit 2. `deploy/build-golden.sh` execs it. Test container (test/) unchanged
+- [x] `deploy/check-image.sh`: refusals, the exact tree, static x86-64, `/coredns -version`, a UDP whoami answer, same bytes twice
+- [ ] sc-build green; issue comment for the master's flip (`component edit coredns --set kind=tree`); stormcos PR deleting the stage block after the flip
+
 ### Next — bugs found by the #3 audit
 Cluster-DNS path first (stormcos runs `lameduck 5s` + `reload` + `loop`):
 - [ ] #20 signed zone files do not load (hickory parser)
-- [ ] #34 hickory-proto 0.24.4 → ≥ 0.26.2 (CVE-2026-123570, P1)
 - [ ] #31 watch errors logged without a resume line

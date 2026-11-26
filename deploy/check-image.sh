@@ -59,8 +59,11 @@ q = bytes.fromhex("1234010000010000000000000677686f616d69076578616d706c650000010
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(0.5)
 s.sendto(q, ("127.0.0.1", int(sys.argv[1])))
 r = s.recv(512)
-assert r[:2] == b"\x12\x34" and r[3] & 0x0f == 0 and int.from_bytes(r[6:8], "big") >= 1, r.hex()
-print(f"NOERROR, {int.from_bytes(r[6:8], 'big')} answer(s), {len(r)} bytes")
+# whoami answers as CoreDNS's does: the client's A and _udp SRV in the
+# additional section, none in the answer section.
+assert r[:2] == b"\x12\x34" and r[3] & 0x0f == 0 and int.from_bytes(r[10:12], "big") == 2, r.hex()
+assert b"\x00\x01\x00\x01" in r[32:] and b"\x7f\x00\x00\x01" in r and b"\x04_udp" in r, r.hex()
+print(f"NOERROR, additional A 127.0.0.1 + _udp SRV, {len(r)} bytes")
 PY
 ans=""
 command -v python3 >/dev/null || fail "no python3 on this machine for the UDP query"
